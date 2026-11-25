@@ -15,6 +15,8 @@ public sealed class Player
     public readonly List<CraftJob> Queue = new();
     public double MineProgress;
     public (int x, int y)? MiningTile;
+    /// <summary>False while a remote player is disconnected (their character and inventory are kept for rejoining).</summary>
+    public bool Online = true;
     public const int BaseSlots = 40;
     public const float Reach = 14f;
 }

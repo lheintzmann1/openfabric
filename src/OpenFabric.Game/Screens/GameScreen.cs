@@ -15,8 +15,8 @@ public sealed class GameScreen : Screen
     public readonly GameSession Session;
     readonly UiContext ctx;
     readonly Camera cam = new() { Zoom = 32 };
-    readonly ChunkRenderer chunks;
-    readonly BuildingRenderer buildings;
+    ChunkRenderer chunks;
+    BuildingRenderer buildings;
     readonly WindowManager windows = new();
 
     double acc;
@@ -32,6 +32,9 @@ public sealed class GameScreen : Screen
     (int x, int y)? mineTarget;
     bool wasMining;
     float toastCooldown;
+    bool disconnectedShown;
+    string chatText = "";
+    bool chatOpen, chatFresh;
     Point lastMouse;
 
     static readonly string[] Categories = { "production", "logistics", "power", "fluids", "storage", "research", "special" };
@@ -62,10 +65,25 @@ public sealed class GameScreen : Screen
     }
 
     public static GameScreen HostGame(OpenFabricGame host, int seed, string name, int port)
-        => throw new NotSupportedException("Multiplayer is not available yet");
+    {
+        var sim = new Simulation(host.Data, seed);
+        var p = sim.AddPlayer(string.IsNullOrWhiteSpace(name) ? "Host" : name);
+        var server = new OpenFabric.Net.HostServer(sim, port);
+        var s = new HostSession(sim, p.Id, server) { SavePath = Path.Combine(OpenFabricGame.SaveDir, "multiplayer.ofs") };
+        sim.Notify($"Hosting on UDP port {port}. Friends join with your IP address.");
+        if (host.Options.Cheat) DevTools.Cheat(sim, p);
+        return new GameScreen(host, s);
+    }
 
     public static GameScreen JoinGame(OpenFabricGame host, string address, string name)
-        => throw new NotSupportedException("Multiplayer is not available yet");
+    {
+        var parts = address.Trim().Split(':');
+        int port = parts.Length > 1 && int.TryParse(parts[1], out var pv) ? pv : 27015;
+        var conn = new OpenFabric.Net.ClientConnection(host.Data);
+        try { conn.Connect(parts[0], port, string.IsNullOrWhiteSpace(name) ? "Player" : name); }
+        catch { conn.Dispose(); throw; }
+        return new GameScreen(host, new ClientSession(conn));
+    }
 
     // ---- ctor ---------------------------------------------------------------------------------
 
@@ -76,13 +94,15 @@ public sealed class GameScreen : Screen
         buildings = new BuildingRenderer(host.Gfx, cam);
         ctx = new UiContext { Ui = host.Ui, S = session, Cam = cam, Windows = windows };
         foreach (var w in WindowRegistry.CreateAll()) windows.Add(w);
-        cam.Center = new Vector2(session.Me.X, session.Me.Y);
+        session.SimChanged += () => { chunks = new ChunkRenderer(Host.GraphicsDevice, Session.Sim.Map); };
+        cam.Center = new Vector2(session.PredX, session.PredY);
         for (int cy = -2; cy <= 1; cy++) for (int cx = -2; cx <= 1; cx++) session.Sim.Map.GetChunk(cx, cy);
     }
 
     Simulation Sim => Session.Sim;
     GameData Data => Session.Data;
     Player Me => Session.Me;
+    Vector2 MyPos => new(Session.PredX, Session.PredY);
     Ui Ui => Host.Ui;
     Gfx G => Host.Gfx;
 
@@ -97,6 +117,11 @@ public sealed class GameScreen : Screen
         toastCooldown -= dt;
         showDebug |= false;
 
+        Session.Poll();
+        if (Session is ClientSession { Connected: false } cs0 && cs0.Error != null && !disconnectedShown)
+        {
+            disconnectedShown = true; Session.Toast(cs0.Error);
+        }
         if (!paused)
         {
             windows.Update(ctx);
@@ -109,12 +134,15 @@ public sealed class GameScreen : Screen
         if (!paused) HandleWorldInput(dt);
 
         // fixed-step simulation
-        if (!paused)
+        if (!paused || Session.IsMultiplayer)
         {
             acc += dt;
             int steps = 0;
-            while (acc >= Simulation.Dt && steps < 6)
+            // clients also catch up when their tick buffer grows (jitter / slow frames)
+            int extra = Math.Min(4, Math.Max(0, Session.BufferedTicks - 3));
+            while ((acc >= Simulation.Dt || extra > 0) && steps < 10)
             {
+                if (acc < Simulation.Dt) extra--;
                 if (mineTarget is { } mt)
                 {
                     var r = Session.Send(new MineCmd(mt.x, mt.y));
@@ -122,24 +150,27 @@ public sealed class GameScreen : Screen
                     wasMining = true;
                 }
                 else if (wasMining) { Session.Send(new StopMineCmd()); wasMining = false; }
-                Sim.Step();
-                acc -= Simulation.Dt; steps++;
+                if (!Session.StepTick()) { acc = Math.Min(acc, Simulation.Dt); break; }
+                if (acc >= Simulation.Dt) acc -= Simulation.Dt;
+                steps++;
             }
             if (acc > 0.25) acc = 0;
         }
 
-        cam.Center = Vector2.Lerp(cam.Center, new Vector2(Me.X, Me.Y), 1 - MathF.Exp(-14 * dt));
+        cam.Center = Vector2.Lerp(cam.Center, MyPos, 1 - MathF.Exp(-14 * dt));
         StreamChunks();
 
         autosaveTimer += dt;
-        if (autosaveTimer > 120) { autosaveTimer = 0; SaveGame(quiet: true); }
+        if (autosaveTimer > 120 && Session.CanSave) { autosaveTimer = 0; SaveGame(quiet: true); }
         lastMouse = ui.Mouse;
     }
 
     void HandleHotkeys()
     {
         var ui = Ui;
-        if (ui.TextFocused) { if (ui.KeyPressed(Keys.Escape)) ui.FocusId = null; return; }
+        if (chatOpen && ui.FocusId != "chat") chatOpen = false;
+        if (ui.TextFocused) { if (ui.KeyPressed(Keys.Escape)) { ui.FocusId = null; chatOpen = false; } return; }
+        if (ui.KeyPressed(Keys.Enter) && Session.IsMultiplayer) { chatOpen = true; chatFresh = true; ui.FocusId = "chat"; chatText = ""; return; }
         if (ui.KeyPressed(Keys.Escape))
         {
             if (ctx.HeldBuild != null) ctx.HeldBuild = null;
@@ -207,13 +238,17 @@ public sealed class GameScreen : Screen
         if (dir == Vector2.Zero) return;
         dir.Normalize();
         float speed = 7f * (ui.Shift ? 2.0f : 1f) * (float)(1 + Sim.Team.Mod("moveSpeed"));
-        var p = Me;
-        if (Sim.Map.TerrainAt((int)MathF.Floor(p.X), (int)MathF.Floor(p.Y)) == Terrain.Water) speed *= 0.5f;
+        float px = Session.PredX, py = Session.PredY;
+        if (Sim.Map.TerrainAt((int)MathF.Floor(px), (int)MathF.Floor(py)) == Terrain.Water) speed *= 0.5f;
         var step = dir * speed * dt;
-        float nx = p.X, ny = p.Y;
-        if (Sim.Map.Walkable((int)MathF.Floor(p.X + step.X), (int)MathF.Floor(p.Y))) nx += step.X;
-        if (Sim.Map.Walkable((int)MathF.Floor(nx), (int)MathF.Floor(p.Y + step.Y))) ny += step.Y;
-        if (nx != p.X || ny != p.Y) Session.Send(new MoveCmd(nx, ny));
+        float nx = px, ny = py;
+        if (Sim.Map.Walkable((int)MathF.Floor(px + step.X), (int)MathF.Floor(py))) nx += step.X;
+        if (Sim.Map.Walkable((int)MathF.Floor(nx), (int)MathF.Floor(py + step.Y))) ny += step.Y;
+        if (nx != px || ny != py)
+        {
+            Session.PredX = nx; Session.PredY = ny;
+            Session.Send(new MoveCmd(nx, ny));
+        }
     }
 
     void HandleWorldInput(float dt)
@@ -299,7 +334,7 @@ public sealed class GameScreen : Screen
         var (x0, y0, x1, y1) = cam.VisibleTiles();
         int cx0 = WorldGen.FloorDiv(x0, Chunk.Size) - 1, cx1 = WorldGen.FloorDiv(x1, Chunk.Size) + 1;
         int cy0 = WorldGen.FloorDiv(y0, Chunk.Size) - 1, cy1 = WorldGen.FloorDiv(y1, Chunk.Size) + 1;
-        int pcx = WorldGen.FloorDiv((int)Me.X, Chunk.Size), pcy = WorldGen.FloorDiv((int)Me.Y, Chunk.Size);
+        int pcx = WorldGen.FloorDiv((int)Session.PredX, Chunk.Size), pcy = WorldGen.FloorDiv((int)Session.PredY, Chunk.Size);
         var map = Sim.Map;
         var want = new List<(int cx, int cy, float d)>();
         void Add(int cx, int cy)
@@ -316,6 +351,7 @@ public sealed class GameScreen : Screen
 
     void SaveGame(bool quiet)
     {
+        if (!Session.CanSave) { if (!quiet) Session.Toast("Only the host can save"); return; }
         try
         {
             Sim.Save(Session.SavePath);
@@ -324,7 +360,7 @@ public sealed class GameScreen : Screen
         catch (Exception e) { Session.Toast("Save failed: " + e.Message); }
     }
 
-    public override void Unload() { }
+    public override void Unload() { Session.Dispose(); }
 
     // ===== draw ======================================================================================
 
@@ -434,7 +470,7 @@ public sealed class GameScreen : Screen
             if (def.Kind == "pole")
                 g.Circle(cam.WorldToScreen(new Vector2(ax + 0.5f, ay + 0.5f)), (float)def.Prop("radius", 3) * cam.Zoom, new Color(255, 214, 80, 150), 1.5f);
             // reach ring
-            g.Circle(cam.WorldToScreen(new Vector2(Me.X, Me.Y)), Player.Reach * cam.Zoom, new Color(255, 255, 255, 25), 1f, 64);
+            g.Circle(cam.WorldToScreen(MyPos), Player.Reach * cam.Zoom, new Color(255, 255, 255, 25), 1f, 64);
             if (!chk.Ok)
             {
                 var ts = cam.WorldToScreen(new Vector2(ax, ay));
@@ -466,7 +502,7 @@ public sealed class GameScreen : Screen
         // mining beam
         if (mineTarget is { } tgt)
         {
-            var a = cam.WorldToScreen(new Vector2(Me.X, Me.Y)); var b = cam.WorldToScreen(new Vector2(tgt.x + 0.5f, tgt.y + 0.5f));
+            var a = cam.WorldToScreen(MyPos); var b = cam.WorldToScreen(new Vector2(tgt.x + 0.5f, tgt.y + 0.5f));
             g.Line(a, b, new Color(255, 214, 80, 160), 2f);
         }
     }
@@ -475,8 +511,9 @@ public sealed class GameScreen : Screen
     {
         foreach (var p in Sim.Players.Values)
         {
-            var s = cam.WorldToScreen(new Vector2(p.X, p.Y));
             bool me = p.Id == Session.LocalId;
+            if (!p.Online && !me) continue;
+            var s = cam.WorldToScreen(me ? MyPos : new Vector2(p.X, p.Y));
             G.Icon("person_pin_circle", s, MathF.Max(22, cam.Zoom * 0.9f), me ? Gfx.Hex("#ffd54a") : Gfx.Hex("#7be0ff"), shadow: true);
             if (!me) G.Text(p.Name, s + new Vector2(-G.Measure(p.Name, 12).X / 2, -cam.Zoom * 0.9f - 6), 12, Color.White);
         }
@@ -538,8 +575,40 @@ public sealed class GameScreen : Screen
         }
 
         if (showMinimap) DrawMinimap(new Rectangle(W - 10 - 180, 58, 180, 180));
+        DrawMultiplayerHud();
         DrawLog();
         DrawQueueStatus();
+    }
+
+    void DrawMultiplayerHud()
+    {
+        if (!Session.IsMultiplayer) return;
+        var ui = Ui; var g = G;
+        var players = Sim.Players.Values.Where(p => p.Online).ToList();
+        var pings = Session.Peers.ToDictionary(x => x.name, x => x.ping);
+        var r = new Rectangle(10, Sim.PowerNets.Count > 0 ? 122 : 90, 330, 30 + players.Count * 20);
+        ui.Panel(r);
+        g.Icon("groups", new Vector2(r.X + 16, r.Y + 14), 18, Theme.Accent);
+        g.Text(Session.NetStatus ?? "", new Vector2(r.X + 32, r.Y + 6), 12, Theme.TextDim);
+        for (int i = 0; i < players.Count; i++)
+        {
+            var p = players[i];
+            bool me = p.Id == Session.LocalId;
+            g.Icon("person", new Vector2(r.X + 16, r.Y + 38 + i * 20), 14, me ? Gfx.Hex("#ffd54a") : Gfx.Hex("#7be0ff"));
+            g.Text(p.Name + (me ? " (you)" : ""), new Vector2(r.X + 30, r.Y + 30 + i * 20), 13, Theme.Text);
+            if (pings.TryGetValue(p.Name, out var ping)) g.Text($"{ping} ms", new Vector2(r.Right - 56, r.Y + 31 + i * 20), 12, Theme.TextDim);
+        }
+        if (chatOpen)
+        {
+            var box = new Rectangle(10, ui.Screen.Y - 40, 460, 30);
+            chatText = ui.TextBox("chat", box, chatText, "Say something… (Enter to send)");
+            if (chatFresh) chatFresh = false;
+            else if (ui.KeyPressed(Keys.Enter) && ui.FocusId == "chat")
+            {
+                if (chatText.Trim().Length > 0) Session.Send(new ChatCmd(chatText.Trim()));
+                chatText = ""; ui.FocusId = null; chatOpen = false;
+            }
+        }
     }
 
     void DrawQueueStatus()
@@ -588,7 +657,7 @@ public sealed class GameScreen : Screen
         ui.Panel(new Rectangle(r.X - 3, r.Y - 3, r.Width + 6, r.Height + 6), null, new Color(0, 0, 0, 220));
         ui.BeginClip(r);
         float half = r.Width * tilesPerPx / 2f;
-        float px0 = Me.X, py0 = Me.Y;
+        float px0 = Session.PredX, py0 = Session.PredY;
         var map = Sim.Map;
         int cx0 = WorldGen.FloorDiv((int)(px0 - half), Chunk.Size), cx1 = WorldGen.FloorDiv((int)(px0 + half), Chunk.Size);
         int cy0 = WorldGen.FloorDiv((int)(py0 - half), Chunk.Size), cy1 = WorldGen.FloorDiv((int)(py0 + half), Chunk.Size);

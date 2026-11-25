@@ -46,7 +46,7 @@ public sealed partial class Simulation
         w.Write(Players.Count);
         foreach (var p in Players.Values)
         {
-            w.Write(p.Id); w.Write(p.Name); w.Write(p.X); w.Write(p.Y);
+            w.Write(p.Id); w.Write(p.Name); w.Write(p.X); w.Write(p.Y); w.Write(p.Online);
             p.Inv.Write(w);
             w.Write(p.Queue.Count);
             foreach (var j in p.Queue) { w.Write(j.Recipe); w.Write(j.Progress); }
@@ -93,7 +93,7 @@ public sealed partial class Simulation
         int pn = r.ReadInt32();
         for (int i = 0; i < pn; i++)
         {
-            var p = new Player { Id = r.ReadInt32(), Name = r.ReadString(), X = r.ReadSingle(), Y = r.ReadSingle() };
+            var p = new Player { Id = r.ReadInt32(), Name = r.ReadString(), X = r.ReadSingle(), Y = r.ReadSingle(), Online = r.ReadBoolean() };
             p.Inv.Read(r);
             p.Inv.MaxSlots = Player.BaseSlots + (int)s.Team.Mod("inventorySlots");
             int qn = r.ReadInt32();
@@ -145,7 +145,7 @@ public sealed partial class Simulation
             Mix(b.Id); Mix(b.X); Mix(b.Y); Mix(b.Rot); Mix(b.BeltCount);
             Mix((long)(b.Progress * 1000)); Mix((long)(b.In.Total * 1000)); Mix((long)(b.Out.Total * 1000));
         }
-        foreach (var p in Players.Values) { Mix(p.Id); Mix((long)(p.Inv.Total * 100)); }
+        foreach (var p in Players.Values) { Mix(p.Id); Mix((long)(p.Inv.Total * 100)); Mix((long)(p.X * 100)); Mix((long)(p.Y * 100)); }
         Mix(Team.Milestones.Count); Mix(Team.ResearchDone.Count);
         return h;
     }

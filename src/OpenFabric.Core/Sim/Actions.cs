@@ -6,6 +6,29 @@ namespace OpenFabric.Core.Sim;
 /// <summary>Player-driven actions (the bodies of the commands).</summary>
 public sealed partial class Simulation
 {
+    // ===== multiplayer membership (applied identically on host and clients) ===========================
+
+    /// <summary>A player (re)joins. Returns the player; reuses a disconnected player with the same name.</summary>
+    public Player JoinPlayer(string name)
+    {
+        var existing = Players.Values.FirstOrDefault(x => x.Name == name && !x.Online);
+        if (existing != null) { existing.Online = true; Notify($"{name} rejoined"); return existing; }
+        if (Players.Values.Any(x => x.Name == name)) name += "#" + (Players.Count + 1);
+        var p = AddPlayer(name);
+        // spawn next to the first player so groups start together
+        var first = Players.Values.First();
+        p.X = first.X + 1; p.Y = first.Y;
+        Notify($"{name} joined");
+        return p;
+    }
+
+    public void LeavePlayer(int id)
+    {
+        if (!Players.TryGetValue(id, out var p)) return;
+        p.Online = false; p.MiningTile = null;
+        Notify($"{p.Name} left");
+    }
+
     // ===== movement & mining ============================================================================
 
     public Result MovePlayer(Player p, float x, float y)

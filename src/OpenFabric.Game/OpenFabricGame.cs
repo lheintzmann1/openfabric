@@ -66,7 +66,11 @@ public sealed class OpenFabricGame : Microsoft.Xna.Framework.Game
         Ui = new Ui(Gfx, Data);
         Window.TextInput += (_, e) => Ui.FeedChar(e.Character);
 
-        if (Options.Load && File.Exists(Path.Combine(SaveDir, "autosave.ofs")))
+        if (Options.Host)
+            SetScreen(GameScreen.HostGame(this, Options.Seed ?? Environment.TickCount, Options.Name, Options.Port));
+        else if (Options.Join != null)
+            SetScreen(GameScreen.JoinGame(this, Options.Join, Options.Name));
+        else if (Options.Load && File.Exists(Path.Combine(SaveDir, "autosave.ofs")))
             SetScreen(GameScreen.FromSave(this, Path.Combine(SaveDir, "autosave.ofs")));
         else if (Options.NewGame)
             SetScreen(GameScreen.NewGame(this, Options.Seed ?? Environment.TickCount));

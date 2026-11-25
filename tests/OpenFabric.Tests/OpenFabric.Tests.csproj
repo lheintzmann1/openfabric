@@ -20,6 +20,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\OpenFabric.Core\OpenFabric.Core.csproj" />
+    <ProjectReference Include="..\..\src\OpenFabric.Net\OpenFabric.Net.csproj" />
   </ItemGroup>
 
 </Project>
