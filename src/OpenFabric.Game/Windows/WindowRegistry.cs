@@ -8,6 +8,7 @@ public static class WindowRegistry
     public static IEnumerable<Window> CreateAll()
     {
         yield return new InventoryWindow();
+        yield return new BuildingWindow();
         yield return new TechWindow();
         yield return new StatsWindow();
         yield return new RecipeBookWindow();
