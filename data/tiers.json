@@ -5,7 +5,7 @@
     {"id": "m00_3", "name": "Banked Fire", "description": "Stock up fuel and rods for the first machines.", "cost": [{"item": "iron_rod", "amount": 20}, {"item": "copper_wire", "amount": 40}, {"item": "stone_brick", "amount": 40}, {"item": "coal", "amount": 30}], "unlocks": ["riveted_plate"]}
   ]},
   {"index": 1, "name": "Basic Automation", "description": "Belts, loaders and the first clockwork machines.", "milestones": [
-    {"id": "m01_1", "name": "Conveyance", "description": "Move items on proper belts.", "cost": [{"item": "iron_plate", "amount": 60}, {"item": "iron_gear", "amount": 40}, {"item": "screw", "amount": 60}], "unlocks": ["belt_mk1"]},
+    {"id": "m01_1", "name": "Conveyance", "description": "Move items on proper belts and splitters.", "cost": [{"item": "iron_plate", "amount": 60}, {"item": "iron_gear", "amount": 40}, {"item": "screw", "amount": 60}], "unlocks": ["belt_mk1", "belt_splitter"]},
     {"id": "m01_2", "name": "Loader Arms", "description": "Automatic loading of belts and machines.", "cost": [{"item": "iron_gear", "amount": 60}, {"item": "copper_cable", "amount": 30}, {"item": "iron_rod", "amount": 60}], "unlocks": ["loader_mk1"]},
     {"id": "m01_3", "name": "Clockwork Constructors", "description": "Fuel-driven constructors that craft for you.", "cost": [{"item": "riveted_plate", "amount": 40}, {"item": "copper_cable", "amount": 50}, {"item": "stone_brick", "amount": 80}], "unlocks": ["metal_frame", "burner_constructor"]},
     {"id": "m01_4", "name": "Warehousing", "description": "Iron storage for the growing base.", "cost": [{"item": "copper_sheet", "amount": 40}, {"item": "riveted_plate", "amount": 30}, {"item": "iron_rod", "amount": 100}, {"item": "coal", "amount": 100}], "unlocks": ["iron_chest"]}

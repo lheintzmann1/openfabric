@@ -24,6 +24,7 @@ Units: items/s, tiles, seconds, kW (power), MJ (energy). Fluids are items with `
 | crafter | **any building whose `kind` equals some recipe's `machine`** runs those recipes. `speed` multiplies recipe time^-1; `powerKw` electric draw; `fuelKw`>0 => burner (needs fuel items, e.g. stone furnace) | optional `autoRecipe: 1` (picks recipe from inputs, e.g. furnaces), `slotsIn`, `modules` |
 | `belt` | conveyor | `speed` tiles/s |
 | `splitter` | 1x1 router: input from back, outputs round-robin to 3 other sides | none |
+| `dual_splitter` | 1x2 Factorio-style splitter: 2 inputs, 2 outputs, input/output priority and item filter | none |
 | `merger` | accepts from 3 sides, outputs forward | none |
 | `underground` | belt tunnel; entrance+exit pair in line | `range` (tiles), `speed` |
 | `loader` | 1x1 arm: moves items/fluid from the tile behind to the tile in front | `rate` items/s |

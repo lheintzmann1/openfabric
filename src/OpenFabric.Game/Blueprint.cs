@@ -5,7 +5,8 @@ namespace OpenFabric.Game;
 /// <summary>A copied group of buildings that can be pasted elsewhere (and rotated).</summary>
 public sealed class Blueprint
 {
-    public sealed record Entry(string Def, int Dx, int Dy, int Rot, string Recipe, int W, int H);
+    public sealed record Entry(string Def, int Dx, int Dy, int Rot, string Recipe, int W, int H,
+        byte Bend = 0, byte InPrio = 0, byte OutPrio = 0, string Filter = "");
 
     public readonly List<Entry> Entries = new();
     public int Count => Entries.Count;
@@ -20,7 +21,8 @@ public sealed class Blueprint
         {
             if (b.Kind == "hub") continue;
             if (b.X < x0 || b.Y < y0 || b.X + b.W - 1 > x1 || b.Y + b.H - 1 > y1) continue;
-            bp.Entries.Add(new Entry(b.Def.Id, b.X - x0, b.Y - y0, b.Rot, b.Recipe ?? "", b.W, b.H));
+            bp.Entries.Add(new Entry(b.Def.Id, b.X - x0, b.Y - y0, b.Rot, b.Recipe ?? "", b.W, b.H,
+                b.BeltBend, b.SplitterInPriority, b.SplitterOutPriority, b.SplitterFilter ?? ""));
         }
         return bp;
     }
@@ -30,7 +32,7 @@ public sealed class Blueprint
     {
         var n = new Blueprint();
         foreach (var e in Entries)
-            n.Entries.Add(new Entry(e.Def, -(e.Dy + e.H), e.Dx, (e.Rot + 1) & 3, e.Recipe, e.H, e.W));
+            n.Entries.Add(e with { Dx = -(e.Dy + e.H), Dy = e.Dx, Rot = (e.Rot + 1) & 3, W = e.H, H = e.W });
         if (n.Entries.Count == 0) return n;
         int minX = n.Entries.Min(e => e.Dx), minY = n.Entries.Min(e => e.Dy);
         for (int i = 0; i < n.Entries.Count; i++)
