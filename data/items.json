@@ -1,0 +1,16 @@
+// Stage 1: raw resources only. Intermediate/product items are added with the tier 0-2 slice.
+[
+  { "id": "iron_ore",     "name": "Iron Ore",     "icon": "circle",    "color": "#8fa4c9", "category": "raw", "tier": 0 },
+  { "id": "copper_ore",   "name": "Copper Ore",   "icon": "circle",    "color": "#e08a4a", "category": "raw", "tier": 0 },
+  { "id": "coal",         "name": "Coal",         "icon": "circle",    "color": "#2b2b33", "category": "raw", "tier": 0, "fuelMJ": 4 },
+  { "id": "stone",        "name": "Stone",        "icon": "circle",    "color": "#b8b2a0", "category": "raw", "tier": 0 },
+  { "id": "limestone",    "name": "Limestone",    "icon": "circle",    "color": "#ebe4c6", "category": "raw", "tier": 3 },
+  { "id": "quartz",       "name": "Raw Quartz",   "icon": "diamond",   "color": "#e4efff", "category": "raw", "tier": 4 },
+  { "id": "sulfur",       "name": "Sulfur",       "icon": "circle",    "color": "#e8d83a", "category": "raw", "tier": 5 },
+  { "id": "crude_oil",    "name": "Crude Oil",    "icon": "oil_barrel","color": "#3a1f5c", "category": "raw", "tier": 5, "fluid": true },
+  { "id": "bauxite",      "name": "Bauxite",      "icon": "circle",    "color": "#c4553a", "category": "raw", "tier": 6 },
+  { "id": "gold_ore",     "name": "Gold Ore",     "icon": "diamond",   "color": "#f5c542", "category": "raw", "tier": 7 },
+  { "id": "titanium_ore", "name": "Titanium Ore", "icon": "circle",    "color": "#9ab3bf", "category": "raw", "tier": 9 },
+  { "id": "lithium_ore",  "name": "Lithium Ore",  "icon": "circle",    "color": "#d98cff", "category": "raw", "tier": 10 },
+  { "id": "uranium_ore",  "name": "Uranium Ore",  "icon": "circle",    "color": "#7cff4a", "category": "raw", "tier": 8 }
+]

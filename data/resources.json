@@ -1,0 +1,16 @@
+// World-generation resources. "item" must exist in items.json. Distances are in tiles from spawn.
+[
+  { "item": "iron_ore",     "name": "Iron",       "icon": "circle",   "color": "#8fa4c9", "starter": true, "minDist": 0,    "weight": 10, "minRadius": 7,  "maxRadius": 13, "minRichness": 400, "maxRichness": 900 },
+  { "item": "copper_ore",   "name": "Copper",     "icon": "circle",   "color": "#e08a4a", "starter": true, "minDist": 0,    "weight": 8,  "minRadius": 6,  "maxRadius": 12, "minRichness": 350, "maxRichness": 800 },
+  { "item": "coal",         "name": "Coal",       "icon": "circle",   "color": "#2b2b33", "starter": true, "minDist": 0,    "weight": 8,  "minRadius": 6,  "maxRadius": 12, "minRichness": 350, "maxRichness": 800 },
+  { "item": "stone",        "name": "Stone",      "icon": "circle",   "color": "#b8b2a0", "starter": true, "minDist": 0,    "weight": 8,  "minRadius": 6,  "maxRadius": 12, "minRichness": 400, "maxRichness": 900 },
+  { "item": "limestone",    "name": "Limestone",  "icon": "circle",   "color": "#ebe4c6", "minDist": 120,  "weight": 5,  "minRadius": 6,  "maxRadius": 11, "minRichness": 400, "maxRichness": 900 },
+  { "item": "quartz",       "name": "Quartz",     "icon": "diamond",  "color": "#e4efff", "minDist": 220,  "weight": 4,  "minRadius": 5,  "maxRadius": 10, "minRichness": 350, "maxRichness": 800 },
+  { "item": "sulfur",       "name": "Sulfur",     "icon": "circle",   "color": "#e8d83a", "minDist": 320,  "weight": 3,  "minRadius": 5,  "maxRadius": 9,  "minRichness": 300, "maxRichness": 700 },
+  { "item": "crude_oil",    "name": "Crude Oil",  "icon": "oil_barrel","color": "#3a1f5c","kind": "fluid", "minDist": 300, "weight": 3, "minRadius": 8, "maxRadius": 14, "minRichness": 120, "maxRichness": 300 },
+  { "item": "bauxite",      "name": "Bauxite",    "icon": "circle",   "color": "#c4553a", "minDist": 480,  "weight": 3,  "minRadius": 5,  "maxRadius": 10, "minRichness": 300, "maxRichness": 750 },
+  { "item": "gold_ore",     "name": "Gold",       "icon": "diamond",  "color": "#f5c542", "minDist": 650,  "weight": 2,  "minRadius": 4,  "maxRadius": 8,  "minRichness": 250, "maxRichness": 600 },
+  { "item": "titanium_ore", "name": "Titanium",   "icon": "circle",   "color": "#9ab3bf", "minDist": 900,  "weight": 2,  "minRadius": 4,  "maxRadius": 8,  "minRichness": 250, "maxRichness": 600 },
+  { "item": "lithium_ore",  "name": "Lithium",    "icon": "circle",   "color": "#d98cff", "minDist": 1000, "weight": 2,  "minRadius": 4,  "maxRadius": 8,  "minRichness": 250, "maxRichness": 600 },
+  { "item": "uranium_ore",  "name": "Uranium",    "icon": "circle",   "color": "#7cff4a", "minDist": 1200, "weight": 1.5,"minRadius": 3,  "maxRadius": 7,  "minRichness": 200, "maxRichness": 500 }
+]
