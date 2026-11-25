@@ -73,10 +73,11 @@ public sealed class MainMenuScreen : Screen
         {
             bool hasSave = File.Exists(SavePath);
             if (ui.Button(Btn(), "Continue", "play_arrow", enabled: hasSave)) TryLoad();
-            if (ui.Button(Btn(), "New Game", "add_circle_outline")) page = 1;
-            if (ui.Button(Btn(), "Multiplayer", "groups")) page = 2;
-            if (ui.Button(Btn(), "Controls", "keyboard")) page = 3;
+            if (ui.Button(Btn(), "New Game", "add_circle_outline")) { page = 1; error = null; ui.FocusId = null; }
+            if (ui.Button(Btn(), "Multiplayer", "groups")) { page = 2; error = null; ui.FocusId = null; }
+            if (ui.Button(Btn(), "Controls", "keyboard")) { page = 3; error = null; ui.FocusId = null; }
             if (ui.Button(Btn(), "Quit", "power_settings_new")) Host.Quit = true;
+            if (error != null) gfx.Text(error.Length > 48 ? error[..48] : error, new Vector2(panel.X + 24, panel.Bottom - 22), 12, Theme.Bad);
         }
         else if (page == 3)
         {
@@ -92,36 +93,38 @@ public sealed class MainMenuScreen : Screen
             seedText = new string(ui.TextBox("seed", tb, seedText, "random").Where(char.IsDigit).Take(9).ToArray());
             if (ui.Button(new Rectangle(tb.Right + 8, y, 44, 38), null, "casino", tip: "Random seed")) seedText = new Random().Next(1000, 999999).ToString();
             y += 54;
-            if (ui.Button(Btn(), "Start", "rocket_launch"))
+            bool start = ui.Button(Btn(), "Start", "rocket_launch") || (ui.FocusId == "seed" && ui.KeyPressed(Microsoft.Xna.Framework.Input.Keys.Enter));
+            if (start)
             {
                 int seed = int.TryParse(seedText, out var sv) ? sv : Environment.TickCount;
                 Host.SetScreen(GameScreen.NewGame(Host, seed));
             }
-            if (ui.Button(Btn(), "Back", "arrow_back")) page = 0;
+            if (ui.Button(Btn(), "Back", "arrow_back")) { page = 0; ui.FocusId = null; }
         }
         else
         {
             gfx.Text("Your name", new Vector2(panel.X + 24, y), 12, Theme.TextDim); y += 16;
             name = ui.TextBox("name", new Rectangle(panel.X + 24, y, panel.Width - 48, 32), name); y += 40;
             gfx.Text("Host (port) / Join (address:port)", new Vector2(panel.X + 24, y), 12, Theme.TextDim); y += 16;
-            hostPort = ui.TextBox("port", new Rectangle(panel.X + 24, y, 90, 32), hostPort);
+            hostPort = new string(ui.TextBox("port", new Rectangle(panel.X + 24, y, 90, 32), hostPort).Where(char.IsDigit).Take(5).ToArray());
             joinAddr = ui.TextBox("addr", new Rectangle(panel.X + 124, y, panel.Width - 148, 32), joinAddr); y += 44;
             var half = (panel.Width - 56) / 2;
-            if (ui.Button(new Rectangle(panel.X + 24, y, half, 40), "Host", "cell_tower"))
+            if (ui.Button(new Rectangle(panel.X + 24, y, half, 40), "Host", "cell_tower") || (ui.FocusId == "port" && ui.KeyPressed(Microsoft.Xna.Framework.Input.Keys.Enter)))
             {
-                int port = int.TryParse(hostPort, out var pv) ? pv : 27015;
+                int port = int.TryParse(hostPort, out var pv) && pv is >= 1 and <= 65535 ? pv : 27015;
                 try { Host.SetScreen(GameScreen.HostGame(Host, Environment.TickCount, name, port)); } catch (Exception e) { error = e.Message; }
             }
-            if (ui.Button(new Rectangle(panel.X + 32 + half, y, half, 40), "Join", "login"))
+            if (ui.Button(new Rectangle(panel.X + 32 + half, y, half, 40), "Join", "login") || (ui.FocusId == "addr" && ui.KeyPressed(Microsoft.Xna.Framework.Input.Keys.Enter)))
             {
-                try { Host.SetScreen(GameScreen.JoinGame(Host, joinAddr, name)); } catch (Exception e) { error = e.Message; }
+                if (string.IsNullOrWhiteSpace(joinAddr)) error = "Enter server address";
+                else try { Host.SetScreen(GameScreen.JoinGame(Host, joinAddr, name)); } catch (Exception e) { error = e.Message; }
             }
             y += 52;
-            if (ui.Button(new Rectangle(panel.X + 24, y, panel.Width - 48, 36), "Back", "arrow_back")) { page = 0; error = null; }
+            if (ui.Button(new Rectangle(panel.X + 24, y, panel.Width - 48, 36), "Back", "arrow_back")) { page = 0; error = null; ui.FocusId = null; }
             if (error != null) gfx.Text(error.Length > 48 ? error[..48] : error, new Vector2(panel.X + 24, panel.Bottom - 22), 12, Theme.Bad);
         }
         string K(string id) => Controls.KeyName(Controls.Get(id));
-        var tip = $"{K("move_up")}{K("move_left")}{K("move_down")}{K("move_right")} move · LMB mine/build · RMB demolish · {K("rotate")} rotate · {K("pipette")} pipette · {K("win_inventory")} inventory · {K("win_tech")} milestones · {K("win_stats")} stats";
+        var tip = $"{K("move_up")}{K("move_left")}{K("move_down")}{K("move_right")} move · LMB mine/build · RMB demolish · {K("rotate")} rotate · {K("angle_belt")} angle belt · {K("pipette")} pipette · {K("win_inventory")} inventory · {K("win_tech")} milestones · {K("win_stats")} stats";
         gfx.Text(tip, new Vector2(cxm - gfx.Measure(tip, 13).X / 2, ui.Screen.Y - 34), 13, Theme.TextDim);
         sb.End();
     }

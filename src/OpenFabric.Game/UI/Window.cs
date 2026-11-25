@@ -20,6 +20,8 @@ public sealed class UiContext
     /// <summary>Building definition currently held for placement (null = none). Windows may set this (e.g. recipe browser "build this").</summary>
     public string? HeldBuild;
     public int HeldRot;
+    /// <summary>Explicit belt bend when placing belts (0=Auto, 1=Straight, 2=FromLeft, 3=FromRight).</summary>
+    public byte HeldBend;
     public WindowManager Windows = null!;
 }
 
@@ -33,7 +35,7 @@ public abstract class Window
     public virtual Point Size => new(640, 480);
     public bool Open;
     public Rectangle Rect;
-    Point? pos;
+    protected Point? pos;
     bool dragging; Point dragOff;
 
     public void Toggle() => Open = !Open;

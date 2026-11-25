@@ -13,7 +13,7 @@ public static class Controls
     public static readonly (string id, string label)[] Actions =
     {
         ("move_up", "Move up"), ("move_down", "Move down"), ("move_left", "Move left"), ("move_right", "Move right"),
-        ("rotate", "Rotate building"), ("pipette", "Pipette (copy building)"),
+        ("rotate", "Rotate building"), ("angle_belt", "Angle belt (turn)"), ("pipette", "Pipette (copy building)"),
         ("win_inventory", "Inventory & crafting"), ("win_tech", "Milestones & research"), ("win_stats", "Statistics"), ("win_recipes", "Recipe book"),
         ("minimap", "Toggle minimap"), ("power_overlay", "Power overlay"), ("debug", "Debug info"), ("quicksave", "Quick save"),
         ("category_prev", "Previous build category"), ("category_next", "Next build category"), ("chat", "Chat (multiplayer)"),
@@ -22,7 +22,7 @@ public static class Controls
     static readonly Dictionary<string, Keys> qwerty = new()
     {
         ["move_up"] = Keys.W, ["move_down"] = Keys.S, ["move_left"] = Keys.A, ["move_right"] = Keys.D,
-        ["rotate"] = Keys.R, ["pipette"] = Keys.Q,
+        ["rotate"] = Keys.R, ["angle_belt"] = Keys.B, ["pipette"] = Keys.Q,
         ["win_inventory"] = Keys.E, ["win_tech"] = Keys.T, ["win_stats"] = Keys.F, ["win_recipes"] = Keys.G,
         ["minimap"] = Keys.M, ["power_overlay"] = Keys.O, ["debug"] = Keys.F3, ["quicksave"] = Keys.F5,
         ["category_prev"] = Keys.OemComma, ["category_next"] = Keys.OemPeriod, ["chat"] = Keys.Enter,

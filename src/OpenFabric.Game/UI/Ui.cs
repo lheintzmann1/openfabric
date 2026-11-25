@@ -28,6 +28,7 @@ public sealed class Ui
     string? tooltip;
     readonly List<char> typed = new();
     public string? FocusId;
+    bool focusSeen;
 
     public Ui(Gfx g, GameData data) { G = g; Data = data; }
 
@@ -48,6 +49,7 @@ public sealed class Ui
         OverUi = false;
         tooltip = null;
         scrollUsed = false;
+        focusSeen = false;
     }
 
     static MouseState Mouse2() => Microsoft.Xna.Framework.Input.Mouse.GetState();
@@ -62,7 +64,11 @@ public sealed class Ui
         return null;
     }
     public void FeedChar(char c) => typed.Add(c);
-    public void EndFrameInput() => typed.Clear();
+    public void EndFrameInput()
+    {
+        typed.Clear();
+        if (FocusId != null && !focusSeen) FocusId = null;
+    }
 
     Rectangle? clip;
     public bool Hover(Rectangle r) => r.Contains(Mouse) && (clip == null || clip.Value.Contains(Mouse));
@@ -200,11 +206,13 @@ public sealed class Ui
     /// <summary>Single-line text box; returns the new text. Focus by clicking.</summary>
     public string TextBox(string id, Rectangle r, string text, string placeholder = "")
     {
-        bool focused = FocusId == id;
+        bool wasFocused = FocusId == id;
+        bool focused = wasFocused;
         if (LeftPressed) { if (Hover(r)) FocusId = id; else if (focused) FocusId = null; focused = FocusId == id; }
+        if (focused) focusSeen = true;
         G.Rect(r, new Color(10, 12, 18));
         G.Outline(r, focused ? Theme.Accent : Theme.Border);
-        if (focused)
+        if (focused && wasFocused)
         {
             foreach (var c in typed)
             {
@@ -213,7 +221,15 @@ public sealed class Ui
             }
         }
         var shown = text.Length == 0 && !focused ? placeholder : text + (focused && (DateTime.Now.Millisecond / 500 % 2 == 0) ? "|" : "");
-        G.Text(shown, new Vector2(r.X + 6, r.Center.Y - 8), Theme.FontNormal, text.Length == 0 && !focused ? Theme.TextDim : Theme.Text);
+        var col = text.Length == 0 && !focused ? Theme.TextDim : Theme.Text;
+        float maxW = Math.Max(8, r.Width - 12);
+        float tw = G.Measure(shown, Theme.FontNormal).X;
+        float xOff = tw > maxW ? maxW - tw : 0;
+        var prevClip = clip;
+        BeginClip(prevClip.HasValue ? Rectangle.Intersect(prevClip.Value, r) : r);
+        G.Text(shown, new Vector2(r.X + 6 + xOff, r.Center.Y - 8), Theme.FontNormal, col);
+        EndClip();
+        if (prevClip.HasValue) BeginClip(prevClip.Value);
         Block(r);
         return text;
     }

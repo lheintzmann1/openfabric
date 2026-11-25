@@ -86,6 +86,7 @@ public sealed class OpenFabricGame : Microsoft.Xna.Framework.Game
 
     public void SetScreen(Screen s)
     {
+        Ui.FocusId = null;
         current?.Unload();
         current = s;
     }
@@ -97,7 +98,6 @@ public sealed class OpenFabricGame : Microsoft.Xna.Framework.Game
         if (Ui.KeyPressed(Microsoft.Xna.Framework.Input.Keys.F11)) gdm.ToggleFullScreen();
         if (Ui.KeyPressed(Microsoft.Xna.Framework.Input.Keys.F9)) Gfx.Svg.Reload(); // pick up edited SVG files
         current?.Update(gt, (float)gt.ElapsedGameTime.TotalSeconds);
-        Ui.EndFrameInput();
         base.Update(gt);
     }
 
@@ -108,6 +108,7 @@ public sealed class OpenFabricGame : Microsoft.Xna.Framework.Game
         Gfx.Sb.Begin(samplerState: SamplerState.LinearClamp);
         Ui.DrawTooltip();
         Gfx.Sb.End();
+        Ui.EndFrameInput();
         base.Draw(gt);
     }
 }
