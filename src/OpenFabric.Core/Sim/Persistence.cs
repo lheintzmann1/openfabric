@@ -6,7 +6,7 @@ namespace OpenFabric.Core.Sim;
 public sealed partial class Simulation
 {
     const uint Magic = 0x3156534F; // "OSV1"
-    const int SaveVersion = 1;
+    const int SaveVersion = 2;
 
     public byte[] SaveToBytes()
     {
@@ -78,13 +78,17 @@ public sealed partial class Simulation
         foreach (var t in b.Transit) { w.Write(t.Item); w.Write(t.T); }
         w.Write(b.Channel); w.Write(b.Charge);
         w.Write(b.FluidAmount); w.Write(b.FluidType ?? "");
+        w.Write(b.BeltBend);
+        w.Write(b.SplitterInPriority);
+        w.Write(b.SplitterOutPriority);
+        w.Write(b.SplitterFilter ?? "");
     }
 
     static Simulation ReadState(GameData data, BinaryReader r)
     {
         if (r.ReadUInt32() != Magic) throw new InvalidDataException("Not an OpenFabric save");
         int ver = r.ReadInt32();
-        if (ver != SaveVersion) throw new InvalidDataException($"Unsupported save version {ver}");
+        if (ver < 1 || ver > SaveVersion) throw new InvalidDataException($"Unsupported save version {ver}");
         int seed = r.ReadInt32();
         var s = new Simulation(data, seed);
         s.Tick = r.ReadInt64(); s.DayTime = r.ReadDouble();
@@ -134,6 +138,13 @@ public sealed partial class Simulation
             b.Channel = r.ReadInt32(); b.Charge = r.ReadDouble();
             b.FluidAmount = r.ReadDouble();
             var ft = r.ReadString(); b.FluidType = ft == "" ? null : ft;
+            if (ver >= 2)
+            {
+                b.BeltBend = r.ReadByte();
+                b.SplitterInPriority = r.ReadByte();
+                b.SplitterOutPriority = r.ReadByte();
+                var sf = r.ReadString(); b.SplitterFilter = sf == "" ? null : sf;
+            }
         }
         return s;
     }
@@ -146,7 +157,9 @@ public sealed partial class Simulation
         Mix(Tick);
         foreach (var b in Buildings)
         {
-            Mix(b.Id); Mix(b.X); Mix(b.Y); Mix(b.Rot); Mix(b.BeltCount);
+            Mix(b.Id); Mix(b.X); Mix(b.Y); Mix(b.Rot); Mix(b.BeltBend);
+            Mix(b.SplitterInPriority); Mix(b.SplitterOutPriority);
+            Mix(b.BeltCount);
             Mix((long)(b.Progress * 1000)); Mix((long)(b.In.Total * 1000)); Mix((long)(b.Out.Total * 1000));
         }
         foreach (var p in Players.Values) { Mix(p.Id); Mix((long)(p.Inv.Total * 100)); Mix((long)(p.X * 100)); Mix((long)(p.Y * 100)); }

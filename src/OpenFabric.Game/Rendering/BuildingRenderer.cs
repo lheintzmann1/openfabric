@@ -32,14 +32,15 @@ public sealed class BuildingRenderer
         return new Rectangle(sx, sy, (int)MathF.Floor(b.X) - sx, (int)MathF.Floor(b.Y) - sy);
     }
 
-    static bool Directional(string kind) => kind is "belt" or "splitter" or "merger" or "underground" or "loader";
+    static bool Directional(string kind) => kind is "belt" or "splitter" or "dual_splitter" or "merger" or "underground" or "loader";
 
     /// <summary>Draw the building's SVG sprite centred on the footprint (rotated for directional kinds, quarter-turn for others).</summary>
     bool Sprite(BuildingDef def, Vector2 centre, int rot, Color tint)
     {
         float z = cam.Zoom;
         float r = (Directional(def.Kind) ? rot : (rot & 1)) * MathHelper.PiOver2;
-        return g.Sprite("buildings/" + def.Id, centre, def.W * z + 0.5f, def.H * z + 0.5f, tint, r);
+        string path = def.Icon.StartsWith("buildings/") ? def.Icon : "buildings/" + def.Id;
+        return g.Sprite(path, centre, def.W * z + 0.5f, def.H * z + 0.5f, tint, r);
     }
 
     public void Draw(Simulation sim)
@@ -50,12 +51,12 @@ public sealed class BuildingRenderer
             if (b.X + b.W > x0 - 1 && b.X < x1 + 1 && b.Y + b.H > y0 - 1 && b.Y < y1 + 1) visible.Add(b);
 
         float z = cam.Zoom;
-        // pass 1: ground layer (pipes, belts, undergrounds)
+        // pass 1: ground layer (pipes, belts)
         foreach (var b in visible)
             switch (b.Kind)
             {
                 case "pipe": DrawPipe(sim, b); break;
-                case "belt": DrawBelt(b); break;
+                case "belt": DrawBelt(sim, b); break;
             }
         // pass 2: bodies
         foreach (var b in visible)
@@ -64,6 +65,7 @@ public sealed class BuildingRenderer
             {
                 case "pipe": case "belt": continue;
                 case "pole": DrawPole(b); continue;
+                case "dual_splitter": DrawDualSplitter(sim, b); continue;
                 case "splitter": case "merger": case "underground": case "loader": DrawSmallDevice(sim, b); continue;
                 default: DrawMachine(sim, b); break;
             }
@@ -73,7 +75,7 @@ public sealed class BuildingRenderer
             foreach (var b in visible)
                 switch (b.Kind)
                 {
-                    case "belt": case "splitter": case "merger": DrawBeltItems(sim, b); break;
+                    case "belt": case "splitter": case "merger": case "dual_splitter": DrawBeltItems(sim, b); break;
                     case "underground": DrawUndergroundItems(sim, b); break;
                 }
         // pass 4: power grid lines
@@ -82,7 +84,8 @@ public sealed class BuildingRenderer
             var wire = new Color(255, 214, 80, PowerOverlay ? 190 : 90);
             foreach (var (a, b) in sim.PoleLinks)
             {
-                var pa = cam.WorldToScreen(new Vector2(a.X + 0.5f, a.Y + 0.5f)); var pb = cam.WorldToScreen(new Vector2(b.X + 0.5f, b.Y + 0.5f));
+                var pa = cam.WorldToScreen(new Vector2(a.Center.x, a.Center.y));
+                var pb = cam.WorldToScreen(new Vector2(b.Center.x, b.Center.y));
                 if ((pa.X < -50 && pb.X < -50) || (pa.X > cam.Viewport.X + 50 && pb.X > cam.Viewport.X + 50)) continue;
                 if ((pa.Y < -50 && pb.Y < -50) || (pa.Y > cam.Viewport.Y + 50 && pb.Y > cam.Viewport.Y + 50)) continue;
                 g.Line(pa, pb, wire, PowerOverlay ? 2 : 1);
@@ -90,39 +93,122 @@ public sealed class BuildingRenderer
             if (PowerOverlay)
                 foreach (var b in visible)
                     if (b.Kind == "pole")
-                        g.Circle(cam.WorldToScreen(new Vector2(b.X + 0.5f, b.Y + 0.5f)), (float)b.Def.Prop("radius", 3) * z, new Color(255, 214, 80, 110), 1.5f);
+                        g.Circle(cam.WorldToScreen(new Vector2(b.Center.x, b.Center.y)), (float)b.Def.Prop("radius", 3) * z, new Color(255, 214, 80, 110), 1.5f);
         }
     }
 
     // ---------------------------------------------------------------------------------------------
 
-    void DrawBelt(Building b)
+    void DrawBelt(Simulation sim, Building b)
+        => DrawBeltShape(sim, b.Def, b.X, b.Y, b.Rot, sim.BeltEffectiveBend(b), Color.White, animated: true);
+
+    void DrawBeltShape(Simulation sim, BuildingDef def, int x, int y, int rot, int bend, Color tint, bool animated)
     {
-        var r = TileRect(b.X, b.Y);
-        var body = Col(b.Def.Color);
-        if (cam.Zoom >= 6 && Sprite(b.Def, new Vector2(r.Center.X, r.Center.Y), b.Rot, Color.White)) return;
-        g.Rect(r, Mul(body, 0.28f));
-        if (cam.Zoom < 6) return;
-        g.Rect(new Rectangle(r.X + 1, r.Y + 1, r.Width - 2, r.Height - 2), Mul(body, 0.38f));
-        if (cam.Zoom >= 12)
+        var r = TileRect(x, y);
+        var body = Col(def.Color);
+        float a = tint.A / 255f;
+        var bedCol = Mul(body, 0.30f) * a;
+        if (cam.Zoom < 6) { g.Rect(r, bedCol); return; }
+
+        float z = cam.Zoom;
+        var c = new Vector2(r.Center.X, r.Center.Y);
+        var railCol = Mul(body, 0.72f) * a;
+        var chevCol = Color.Lerp(body, Color.White, 0.38f) * (0.92f * a);
+        var F = new Vector2(Dir.DX[rot], Dir.DY[rot]);
+        var R = new Vector2(Dir.DX[(rot + 1) & 3], Dir.DY[(rot + 1) & 3]);
+        float railW = Math.Max(1.5f, z * 0.1f);
+        double speed = def.Prop("speed", 1.875) * (1 + sim.Team.Mod("beltSpeed"));
+        float phase = animated ? (float)((Time * speed * 0.5) % 1.0) : 0.25f;
+
+        if (bend is 2 or 3)
         {
-            // scrolling chevron conveys direction and speed
-            double speed = b.Def.Prop("speed", 1.875);
-            float off = (float)((Time * speed * 0.5) % 1.0);
-            var c = new Vector2(r.Center.X, r.Center.Y);
-            var dir = new Vector2(Dir.DX[b.Rot], Dir.DY[b.Rot]);
-            var p = c + dir * (off - 0.5f) * cam.Zoom;
-            g.IconRot("chevron_right", p, cam.Zoom * 0.7f, Mul(body, 1.0f, 130), b.Rot * MathHelper.PiOver2);
+            float sign = bend == 2 ? 1f : -1f; // 2=from Left (-R), 3=from Right (+R)
+            var pivot = c + (0.5f * F - 0.5f * sign * R) * z;
+            Vector2 ArcPt(float t, float rad)
+            {
+                float th = t * MathHelper.PiOver2;
+                return pivot + (-rad * MathF.Cos(th)) * F + (sign * rad * MathF.Sin(th)) * R;
+            }
+            const int segs = 8;
+            float bedW = z * 0.96f;
+            for (int i = 0; i < segs; i++)
+            {
+                var p0 = ArcPt(i / (float)segs, 0.5f * z);
+                var p1 = ArcPt((i + 1) / (float)segs, 0.5f * z);
+                g.Line(p0, p1, bedCol, bedW);
+            }
+            // fill outer corner rounding cleanly
+            for (int i = 0; i < segs; i++)
+            {
+                float t0 = i / (float)segs, t1 = (i + 1) / (float)segs;
+                g.Line(ArcPt(t0, 0.08f * z), ArcPt(t1, 0.08f * z), railCol, railW);
+                g.Line(ArcPt(t0, 0.92f * z), ArcPt(t1, 0.92f * z), railCol, railW);
+            }
+            if (z >= 10)
+            {
+                for (int k = 0; k < 2; k++)
+                {
+                    float t = (phase * 0.5f + k * 0.5f) % 1.0f;
+                    float th = t * MathHelper.PiOver2;
+                    var pt = ArcPt(t, 0.5f * z);
+                    var tan = MathF.Sin(th) * F + sign * MathF.Cos(th) * R;
+                    g.IconRot("chevron_right", pt, z * 0.62f, chevCol, MathF.Atan2(tan.Y, tan.X));
+                }
+            }
+            return;
         }
+
+        // straight belt
+        g.Rect(r, bedCol);
+        g.Line(c - F * z * 0.5f - R * z * 0.42f, c + F * z * 0.5f - R * z * 0.42f, railCol, railW);
+        g.Line(c - F * z * 0.5f + R * z * 0.42f, c + F * z * 0.5f + R * z * 0.42f, railCol, railW);
+        if (z >= 10)
+        {
+            float ang = rot * MathHelper.PiOver2;
+            for (int k = 0; k < 2; k++)
+            {
+                float p = (phase * 0.5f + k * 0.5f) % 1.0f;
+                var pt = c + F * (p - 0.5f) * z;
+                g.IconRot("chevron_right", pt, z * 0.62f, chevCol, ang);
+            }
+        }
+    }
+
+    static Vector2 BeltArcWorld(int bx, int by, int rot, int bend, float pos)
+    {
+        var F = new Vector2(Dir.DX[rot], Dir.DY[rot]);
+        var R = new Vector2(Dir.DX[(rot + 1) & 3], Dir.DY[(rot + 1) & 3]);
+        var C = new Vector2(bx + 0.5f, by + 0.5f);
+        if (bend == 1) return C + F * (pos - 0.5f);
+        float sign = bend == 2 ? 1f : -1f;
+        float th = pos * MathHelper.PiOver2;
+        var pivot = C + 0.5f * F - 0.5f * sign * R;
+        return pivot + (-0.5f * MathF.Cos(th)) * F + (sign * 0.5f * MathF.Sin(th)) * R;
     }
 
     void DrawBeltItems(Simulation sim, Building b)
     {
+        if (b.Kind == "dual_splitter")
+        {
+            var (left, right) = Simulation.SplitterLaneTiles(b);
+            int c0 = 0, c1 = 0;
+            for (int i = 0; i < b.BeltCount; i++)
+            {
+                var it = b.Belt[i];
+                bool isRight = it.Pos >= 0.5f;
+                var tile = isRight ? right : left;
+                int slot = isRight ? c1++ : c0++;
+                float off = slot == 0 ? 0.1f : -0.15f;
+                var wp = new Vector2(tile.x + 0.5f + Dir.DX[b.Rot] * off, tile.y + 0.5f + Dir.DY[b.Rot] * off);
+                DrawItemAt(sim, it.Item, cam.WorldToScreen(wp));
+            }
+            return;
+        }
+        int bend = b.Kind == "belt" ? sim.BeltEffectiveBend(b) : 1;
         for (int i = 0; i < b.BeltCount; i++)
         {
             var it = b.Belt[i];
-            float p = b.Kind == "belt" ? it.Pos : it.Pos;
-            var wp = new Vector2(b.X + 0.5f + Dir.DX[b.Rot] * (p - 0.5f), b.Y + 0.5f + Dir.DY[b.Rot] * (p - 0.5f));
+            var wp = BeltArcWorld(b.X, b.Y, b.Rot, bend, it.Pos);
             DrawItemAt(sim, it.Item, cam.WorldToScreen(wp));
         }
     }
@@ -188,12 +274,54 @@ public sealed class BuildingRenderer
 
     void DrawPole(Building b)
     {
-        var r = TileRect(b.X, b.Y);
+        var r = TileRect(b.X, b.Y, b.W, b.H);
         var c = new Vector2(r.Center.X, r.Center.Y);
-        if (cam.Zoom >= 8 && g.Sprite("buildings/" + b.Def.Id, c, cam.Zoom * 0.9f, cam.Zoom * 0.9f, Color.White)) return;
+        string path = b.Def.Icon.StartsWith("buildings/") ? b.Def.Icon : "buildings/" + b.Def.Id;
+        if (cam.Zoom >= 8 && g.Sprite(path, c, b.W * cam.Zoom * 0.9f, b.H * cam.Zoom * 0.9f, Color.White)) return;
         float s = Math.Max(3, cam.Zoom * 0.28f);
         g.Rect(c.X - s / 2 - 1, c.Y - s / 2 - 1, s + 2, s + 2, new Color(20, 20, 20));
         g.Rect(c.X - s / 2, c.Y - s / 2, s, s, Col(b.Def.Color));
+    }
+
+    void DrawDualSplitter(Simulation sim, Building b)
+    {
+        var r = TileRect(b.X, b.Y, b.W, b.H);
+        var center = new Vector2(r.Center.X, r.Center.Y);
+        float z = cam.Zoom;
+        if (z < 6 || !Sprite(b.Def, center, b.Rot, Color.White))
+        {
+            var body = Col(b.Def.Color);
+            g.Rect(r, Mul(body, 0.35f));
+            g.Outline(r, Mul(body, 0.95f));
+        }
+        if (z < 12) return;
+
+        var (left, right) = Simulation.SplitterLaneTiles(b);
+        var F = new Vector2(Dir.DX[b.Rot], Dir.DY[b.Rot]);
+        float ang = b.Rot * MathHelper.PiOver2;
+        if (b.SplitterInPriority is 1 or 2)
+        {
+            var t = b.SplitterInPriority == 1 ? left : right;
+            var p = cam.WorldToScreen(new Vector2(t.x + 0.5f, t.y + 0.5f) - F * 0.34f);
+            g.IconRot("chevron_right", p, z * 0.45f, UI.Theme.Accent, ang);
+        }
+        if (b.SplitterOutPriority is 1 or 2)
+        {
+            var t = b.SplitterOutPriority == 1 ? left : right;
+            var p = cam.WorldToScreen(new Vector2(t.x + 0.5f, t.y + 0.5f) + F * 0.34f);
+            g.IconRot("chevron_right", p, z * 0.45f, UI.Theme.Good, ang);
+        }
+        if (b.SplitterFilter != null && sim.Data.Items.TryGetValue(b.SplitterFilter, out var fit))
+        {
+            var ft = b.SplitterOutPriority == 1 ? left : b.SplitterOutPriority == 2 ? right : (x: b.X, y: b.Y);
+            var sp = b.SplitterOutPriority is 1 or 2
+                ? cam.WorldToScreen(new Vector2(ft.x + 0.5f, ft.y + 0.5f))
+                : center;
+            float bs = Math.Min(22, z * 0.46f);
+            g.Rect(sp.X - bs / 2, sp.Y - bs / 2, bs, bs, new Color(10, 14, 20, 200));
+            g.Outline(new Rectangle((int)(sp.X - bs / 2), (int)(sp.Y - bs / 2), (int)bs, (int)bs), UI.Theme.Accent);
+            g.Icon(fit.Icon, sp, bs * 0.82f, Col(fit.Color));
+        }
     }
 
     void DrawSmallDevice(Simulation sim, Building b)
@@ -292,21 +420,38 @@ public sealed class BuildingRenderer
 
     // ---- placement ghost -----------------------------------------------------------------------
 
-    public void DrawGhost(Simulation sim, BuildingDef def, int x, int y, int rot, bool ok)
+    public void DrawGhost(Simulation sim, BuildingDef def, int x, int y, int rot, bool ok, byte heldBend = 0)
     {
         var (w, h) = Building.Footprint(def, rot);
         var r = TileRect(x, y, w, h);
         var tint = ok ? new Color(110, 255, 150) : new Color(255, 90, 90);
         var body = Col(def.Color);
         var c = new Vector2(r.Center.X, r.Center.Y);
+        if (def.Kind == "belt")
+        {
+            int bend = sim.PreviewBeltBend(x, y, rot, heldBend);
+            DrawBeltShape(sim, def, x, y, rot, bend, Color.White * 0.78f, animated: true);
+            g.Rect(r, tint * 0.20f);
+            g.Outline(r, tint, 2);
+            return;
+        }
         bool art = cam.Zoom >= 6 && Sprite(def, c, rot, Color.White * 0.75f);
         g.Rect(r, art ? tint * 0.22f : Color.Lerp(Mul(body, 0.5f, 170), tint * 0.5f, 0.45f));
         g.Outline(r, tint, 2);
         if (!art && cam.Zoom >= 8)
         {
-            bool dirIcon = def.Kind is "belt" or "splitter" or "merger" or "underground" or "loader";
+            bool dirIcon = Directional(def.Kind);
             if (dirIcon) g.IconRot(def.Kind == "belt" ? "arrow_forward" : def.Icon, c, Math.Min(r.Width, r.Height) * 0.75f, Color.White * 0.9f, rot * MathHelper.PiOver2);
             else g.Icon(def.Icon, c, Math.Min(r.Width, r.Height) * 0.58f, Color.White * 0.85f);
+        }
+        if (def.Kind == "dual_splitter" && cam.Zoom >= 18)
+        {
+            var dummy = new Building { X = x, Y = y, Rot = Dir.Norm(rot), W = w, H = h };
+            var (left, right) = Simulation.SplitterLaneTiles(dummy);
+            var pl = cam.WorldToScreen(new Vector2(left.x + 0.5f, left.y + 0.5f));
+            var pr = cam.WorldToScreen(new Vector2(right.x + 0.5f, right.y + 0.5f));
+            g.Text("L", pl - new Vector2(4, 7), 11, Color.White * 0.9f);
+            g.Text("R", pr - new Vector2(4, 7), 11, Color.White * 0.9f);
         }
     }
 

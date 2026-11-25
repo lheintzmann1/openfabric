@@ -54,7 +54,7 @@ public sealed class GameScreen : Screen
     public static GameScreen NewGame(OpenFabricGame host, int seed)
     {
         var sim = new Simulation(host.Data, seed);
-        var p = sim.AddPlayer("Engineer");
+        var p = sim.AddPlayer(string.IsNullOrWhiteSpace(host.Options.Name) ? "Engineer" : host.Options.Name);
         var s = new GameSession(sim, p.Id) { SavePath = Path.Combine(OpenFabricGame.SaveDir, "autosave.ofs") };
         sim.Notify("Welcome! Hold LMB on ore to mine. Press E to craft.");
         if (host.Options.Cheat) DevTools.Cheat(sim, p);
@@ -193,13 +193,24 @@ public sealed class GameScreen : Screen
             var (tx, ty) = MouseTile();
             if (Sim.At(tx, ty) is { } hb) Session.Send(new RotateCmd(tx, ty));
         }
+        if (ui.KeyPressed(Controls.Get("angle_belt")) && pasting == null)
+        {
+            if (ctx.HeldBuild != null && Data.Buildings.TryGetValue(ctx.HeldBuild, out var hdef) && hdef.Kind == "belt")
+                ctx.HeldBend = (byte)((ctx.HeldBend + 1) % 4);
+            else if (ctx.HeldBuild == null && !ui.WasOverUi)
+            {
+                var (tx, ty) = MouseTile();
+                if (Sim.At(tx, ty) is { Kind: "belt" } hb)
+                    Session.Send(new SetBeltBendCmd(tx, ty, (byte)((hb.BeltBend + 1) % 4)));
+            }
+        }
         if (ui.KeyPressed(Controls.Get("pipette")))
         {
-            if (ctx.HeldBuild != null) ctx.HeldBuild = null;
+            if (ctx.HeldBuild != null) { ctx.HeldBuild = null; ctx.HeldBend = 0; }
             else
             {
                 var (tx, ty) = MouseTile();
-                if (Sim.At(tx, ty) is { } b && Sim.IsUnlocked(b.Def.Id)) { ctx.HeldBuild = b.Def.Id; ctx.HeldRot = b.Rot; }
+                if (Sim.At(tx, ty) is { } b && Sim.IsUnlocked(b.Def.Id)) { ctx.HeldBuild = b.Def.Id; ctx.HeldRot = b.Rot; ctx.HeldBend = b.Kind == "belt" ? b.BeltBend : (byte)0; }
             }
         }
         // category cycling and number keys pick buildings
@@ -207,7 +218,7 @@ public sealed class GameScreen : Screen
         if (ui.KeyPressed(Controls.Get("category_next"))) CycleCategory(1);
         var list = InCategory(category);
         for (int i = 0; i < 9; i++)
-            if (ui.KeyPressed(Keys.D1 + i) && i < list.Count) { ctx.HeldBuild = list[i].Id; }
+            if (ui.KeyPressed(Keys.D1 + i) && i < list.Count) { if (ctx.HeldBuild != list[i].Id) ctx.HeldBend = 0; ctx.HeldBuild = list[i].Id; }
     }
 
     void CycleCategory(int d)
@@ -218,6 +229,13 @@ public sealed class GameScreen : Screen
 
     List<BuildingDef> InCategory(string cat)
         => Data.Buildings.Values.Where(b => b.Category == cat && Sim.IsUnlocked(b.Id)).ToList();
+
+    bool HasInCategory(string cat)
+    {
+        foreach (var b in Data.Buildings.Values)
+            if (b.Category == cat && Sim.IsUnlocked(b.Id)) return true;
+        return false;
+    }
 
     (int x, int y) MouseTile()
     {
@@ -281,8 +299,14 @@ public sealed class GameScreen : Screen
                 int ok = 0, fail = 0;
                 foreach (var e in pasting.Entries.OrderBy(e => Math.Abs(e.Dx - pasting.Size().w / 2) + Math.Abs(e.Dy - pasting.Size().h / 2)))
                 {
-                    var r = Session.Send(new PlaceCmd(e.Def, ox + e.Dx, oy + e.Dy, e.Rot, e.Recipe));
-                    if (r.Ok) ok++; else fail++;
+                    var r = Session.Send(new PlaceCmd(e.Def, ox + e.Dx, oy + e.Dy, e.Rot, e.Recipe, e.Bend));
+                    if (r.Ok)
+                    {
+                        ok++;
+                        if ((e.InPrio != 0 || e.OutPrio != 0 || e.Filter != "") && Sim.At(ox + e.Dx, oy + e.Dy) is { Kind: "dual_splitter" } sp)
+                            Session.Send(new SetSplitterCmd(sp.Id, e.InPrio, e.OutPrio, e.Filter));
+                    }
+                    else fail++;
                 }
                 if (fail > 0 && !Session.IsMultiplayer) Session.Toast($"Placed {ok}, {fail} failed (blocked or missing materials)");
             }
@@ -304,14 +328,14 @@ public sealed class GameScreen : Screen
         if (!ui.Left) selStart = null;
         if (ctx.HeldBuild != null && Data.Buildings.TryGetValue(ctx.HeldBuild, out var def))
         {
-            if (!uiBlocked && ui.RightPressed) { ctx.HeldBuild = null; return; }
+            if (!uiBlocked && ui.RightPressed) { ctx.HeldBuild = null; ctx.HeldBend = 0; return; }
             if (uiBlocked) { if (ui.LeftReleased) dragging = false; return; }
             var (ax, ay) = AnchorTile(def, ctx.HeldRot);
             bool line = def.W == 1 && def.H == 1;
             if (ui.LeftPressed) { dragging = true; lastDragTile = null; }
             if (dragging && ui.Left)
             {
-                if (lastDragTile == null) { TryPlace(def, ax, ay, ctx.HeldRot); lastDragTile = (ax, ay); }
+                if (lastDragTile == null) { TryPlace(def, ax, ay, ctx.HeldRot, bend: def.Kind == "belt" ? ctx.HeldBend : (byte)0); lastDragTile = (ax, ay); }
                 else if (line && (ax, ay) != lastDragTile.Value)
                 {
                     var last = lastDragTile.Value;
@@ -325,10 +349,10 @@ public sealed class GameScreen : Screen
                         {
                             ctx.HeldRot = rot;
                             // turn the previous tile towards the new one
-                            if (Sim.At(last.x, last.y) is { } prev && prev.Def.Id == def.Id && prev.Rot != rot) TryPlace(def, last.x, last.y, rot, quiet: true);
+                            if (Sim.At(last.x, last.y) is { } prev && prev.Def.Id == def.Id && prev.Rot != rot) TryPlace(def, last.x, last.y, rot, quiet: true, bend: 0);
                         }
                         last = (last.x + sx, last.y + sy);
-                        TryPlace(def, last.x, last.y, ctx.HeldRot, quiet: true);
+                        TryPlace(def, last.x, last.y, ctx.HeldRot, quiet: true, bend: 0);
                     }
                     lastDragTile = last;
                 }
@@ -365,9 +389,9 @@ public sealed class GameScreen : Screen
         else if (w != null) windows.Open(w, ctx);
     }
 
-    void TryPlace(BuildingDef def, int x, int y, int rot, bool quiet = false)
+    void TryPlace(BuildingDef def, int x, int y, int rot, bool quiet = false, byte bend = 0)
     {
-        var r = Session.Send(new PlaceCmd(def.Id, x, y, rot));
+        var r = Session.Send(new PlaceCmd(def.Id, x, y, rot, bend: bend));
         if (!r.Ok && !quiet && toastCooldown <= 0) { Session.Toast(r.Message); toastCooldown = 1.0f; }
     }
 
@@ -450,6 +474,7 @@ public sealed class GameScreen : Screen
     }
 
     static readonly string[] TerrainNames = { "deep_water", "water", "sand", "grass", "forest", "rock", "cliff", "snow" };
+    readonly Texture2D?[] terrainTex = new Texture2D?[TerrainNames.Length];
 
     /// <summary>Close-up: draw the per-terrain SVG tiles (with rotation/shade variation) and resource art over the baked map.</summary>
     void DrawTileArt()
@@ -457,15 +482,14 @@ public sealed class GameScreen : Screen
         if (cam.Zoom < 14) return;
         var (x0, y0, x1, y1) = cam.VisibleTiles();
         float z = cam.Zoom; var g = G; var map = Sim.Map;
-        var tex = new Texture2D?[TerrainNames.Length];
-        for (int i = 0; i < tex.Length; i++) tex[i] = g.Svg.Get("terrain/" + TerrainNames[i], z);
+        for (int i = 0; i < terrainTex.Length; i++) terrainTex[i] = g.Svg.Get("terrain/" + TerrainNames[i], z);
         for (int ty = y0; ty < y1; ty++)
             for (int tx = x0; tx < x1; tx++)
             {
                 int cx = WorldGen.FloorDiv(tx, Chunk.Size), cy = WorldGen.FloorDiv(ty, Chunk.Size);
                 if (!map.IsLoaded(cx, cy)) continue;
                 var t = map.TerrainAt(tx, ty);
-                var tt = tex[(int)t];
+                var tt = terrainTex[(int)t];
                 if (tt == null) continue;
                 var a = cam.WorldToScreen(new Vector2(tx, ty)); var b = cam.WorldToScreen(new Vector2(tx + 1, ty + 1));
                 int sx = (int)MathF.Floor(a.X), sy = (int)MathF.Floor(a.Y);
@@ -496,7 +520,7 @@ public sealed class GameScreen : Screen
                 uint h = Noise.Hash(0xBEEFu, tx, ty);
                 float rich = def.Kind == ResourceKind.Fluid ? 1f : 0.62f + 0.38f * MathF.Min(1f, amt / 700f);
                 float rot = ((h & 3) * MathHelper.PiOver2);
-                if (!g.Sprite("resources/" + def.Item, centre, z * rich, z * rich, Color.White, def.Kind == ResourceKind.Fluid ? 0 : rot))
+                if (!g.Sprite(def.Icon, centre, z * rich, z * rich, Color.White, def.Kind == ResourceKind.Fluid ? 0 : rot))
                 {
                     var col = Gfx.Hex(def.Color);
                     g.Rect(s.X + z * 0.25f, s.Y + z * 0.25f, z * 0.5f, z * 0.5f, col);
@@ -534,10 +558,22 @@ public sealed class GameScreen : Screen
         if (ctx.HeldBuild != null && Data.Buildings.TryGetValue(ctx.HeldBuild, out var def) && !blocked)
         {
             var (ax, ay) = AnchorTile(def, ctx.HeldRot);
-            var chk = Sim.CanPlace(def.Id, ax, ay, ctx.HeldRot, out _);
+            byte heldBend = def.Kind == "belt" ? ctx.HeldBend : (byte)0;
+            var chk = Sim.CanPlace(def.Id, ax, ay, ctx.HeldRot, out _, heldBend);
             bool afford = def.Kind == "hub" || def.Cost.All(s => Me.Inv.Has(s.Item, s.Amount));
-            buildings.DrawGhost(Sim, def, ax, ay, ctx.HeldRot, chk.Ok && afford);
+            buildings.DrawGhost(Sim, def, ax, ay, ctx.HeldRot, chk.Ok && afford, heldBend);
             var (gw, gh) = Building.Footprint(def, ctx.HeldRot);
+            if (def.Kind == "belt" && heldBend != 0)
+            {
+                string bl = heldBend == 1 ? "Straight (B)" : heldBend == 2 ? "From Left (B)" : "From Right (B)";
+                g.Text(bl, cam.WorldToScreen(new Vector2(ax, ay)) + new Vector2(0, -18), 12, Theme.Accent);
+            }
+            if (def.Kind == "underground" && Sim.FindUndergroundPairPreview(def, ax, ay, ctx.HeldRot) is { } pair)
+            {
+                var p1 = cam.WorldToScreen(new Vector2(ax + 0.5f, ay + 0.5f));
+                var p2 = cam.WorldToScreen(new Vector2(pair.X + 0.5f, pair.Y + 0.5f));
+                g.Line(p1, p2, new Color(110, 255, 160, 200), 2f);
+            }
             // drill / pump yield preview
             if (def.Kind is "drill" or "pump")
                 for (int j = 0; j < gh; j++)
@@ -548,7 +584,7 @@ public sealed class GameScreen : Screen
                     }
             // power pole radius preview
             if (def.Kind == "pole")
-                g.Circle(cam.WorldToScreen(new Vector2(ax + 0.5f, ay + 0.5f)), (float)def.Prop("radius", 3) * cam.Zoom, new Color(255, 214, 80, 150), 1.5f);
+                g.Circle(cam.WorldToScreen(new Vector2(ax + gw * 0.5f, ay + gh * 0.5f)), (float)def.Prop("radius", 3) * cam.Zoom, new Color(255, 214, 80, 150), 1.5f);
             // reach ring
             g.Circle(cam.WorldToScreen(MyPos), Player.Reach * cam.Zoom, new Color(255, 255, 255, 25), 1f, 64);
             if (!chk.Ok)
@@ -565,7 +601,8 @@ public sealed class GameScreen : Screen
             if (hov != null)
             {
                 buildings.Highlight(hov, new Color(255, 255, 255, 140));
-
+                if (hov.Kind == "underground" && hov.Link != 0 && Sim.ById.TryGetValue(hov.Link, out var other))
+                    g.Line(cam.WorldToScreen(new Vector2(hov.X + 0.5f, hov.Y + 0.5f)), cam.WorldToScreen(new Vector2(other.X + 0.5f, other.Y + 0.5f)), new Color(110, 220, 255, 180), 2f);
             }
             else
             {
@@ -719,6 +756,10 @@ public sealed class GameScreen : Screen
                 case "belt": case "splitter": case "merger":
                     lines.Add(($"{(d.Prop("speed", 1.875) * 4):0.#} items/s" + (b.BeltCount > 0 ? $" · carrying {string.Join(", ", b.Belt.Take(b.BeltCount).GroupBy(x => x.Item).Select(g => $"{g.Count()}× {Data.Items[g.Key].Name}"))}" : ""), Theme.TextDim));
                     break;
+                case "dual_splitter":
+                    string PrioTxt(byte p) => p == 1 ? "Left" : p == 2 ? "Right" : "Balanced";
+                    lines.Add(($"In: {PrioTxt(b.SplitterInPriority)} · Out: {PrioTxt(b.SplitterOutPriority)}" + (b.SplitterFilter != null ? $" · Filter: {Data.Items[b.SplitterFilter].Name}" : ""), Theme.TextDim));
+                    break;
                 case "chest": case "hub":
                     lines.Add(($"{b.In.SlotsUsed(Data)} / {b.In.MaxSlots} slots" + (Inv(b.In) != "" ? " · " + Inv(b.In) : ""), Theme.TextDim));
                     break;
@@ -741,7 +782,7 @@ public sealed class GameScreen : Screen
             if (d.Prop("outputKw") > 0) lines.Add(($"Output {d.Prop("outputKw"):0} kW" + (b.PNet != null ? $" · load {b.PNet.Load * 100:0}%" : " · not connected"), b.PNet != null ? Theme.Text : Theme.Bad));
             if (d.PowerKw > 0) lines.Add(($"Uses {d.PowerKw:0} kW" + (b.PNet != null ? $" · supply {b.PNet.Satisfaction * 100:0}%" : " · no power connection"), b.PNet != null && b.PNet.Satisfaction > 0.99 ? Theme.TextDim : Theme.Warn));
             if (b.Kind == "pole" && b.PNet != null) lines.Add(($"Grid {b.PNet.DemandKw / 1000:0.0}/{b.PNet.CapacityKw / 1000:0.0} MW · {b.PNet.Members.Count} connected", Theme.TextDim));
-            lines.Add(("Click for details · R rotate · Q copy · RMB demolish", new Color(120, 130, 150)));
+            lines.Add((b.Kind == "belt" ? "Click for details · R rotate · B angle · Q copy · RMB demolish" : "Click for details · R rotate · Q copy · RMB demolish", new Color(120, 130, 150)));
         }
         else
         {
@@ -921,7 +962,7 @@ public sealed class GameScreen : Screen
         int tx = panel.X + 8;
         foreach (var cat in Categories)
         {
-            bool any = InCategory(cat).Count > 0;
+            bool any = HasInCategory(cat);
             var r = new Rectangle(tx, panel.Y + 6, 104, 26);
             if (ui.Button(r, char.ToUpper(cat[0]) + cat[1..], CatIcons[cat], selected: cat == category, enabled: any)) category = cat;
             tx += 108;
@@ -936,6 +977,7 @@ public sealed class GameScreen : Screen
             string tip = def.Name + (i < 9 ? $"  [{i + 1}]" : "") + "\n" + BuildingTipLines(def);
             if (ui.Button(r, null, def.Icon, Gfx.Hex(def.Color), selected: sel, tip: tip))
             {
+                ctx.HeldBend = 0;
                 ctx.HeldBuild = sel ? null : def.Id;
             }
             if (!afford && def.Kind != "hub") g.Rect(r, new Color(0, 0, 0, 90));

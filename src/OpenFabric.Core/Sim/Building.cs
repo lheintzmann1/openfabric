@@ -49,6 +49,16 @@ public sealed class Building
     // --- belts / splitters / mergers (slot 0 only for splitter/merger)
     public readonly BeltItem[] Belt = new BeltItem[4];
     public int BeltCount;
+    /// <summary>0=Auto, 1=Straight, 2=Curve from Left, 3=Curve from Right.</summary>
+    public byte BeltBend;
+    public int CachedBend = 1, BendVersion = -1;
+
+    // --- 2x1 dual splitter
+    /// <summary>0=Balanced, 1=Left, 2=Right.</summary>
+    public byte SplitterInPriority;
+    /// <summary>0=Balanced, 1=Left, 2=Right.</summary>
+    public byte SplitterOutPriority;
+    public string? SplitterFilter;
 
     // --- underground
     public int Link;

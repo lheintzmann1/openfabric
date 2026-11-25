@@ -32,6 +32,8 @@ public static class CommandCodec
             10 => new TransferCmd(r.ReadInt32(), r.ReadString(), r.ReadDouble(), r.ReadBoolean()),
             11 => new SubmitCmd(r.ReadString()), 12 => new ResearchCmd(r.ReadString(), r.ReadBoolean()),
             13 => new SetChannelCmd(r.ReadInt32(), r.ReadInt32()), 14 => new ChatCmd(Trunc(r.ReadString(), 200)),
+            15 => new SetBeltBendCmd(r.ReadInt32(), r.ReadInt32(), r.ReadByte()),
+            16 => new SetSplitterCmd(r.ReadInt32(), r.ReadByte(), r.ReadByte(), Trunc(r.ReadString(), 64)),
             _ => throw new InvalidDataException("Unknown command tag " + tag),
         };
         c.PlayerId = pid;
@@ -46,16 +48,17 @@ public sealed class PlaceCmd : ICommand
     public string Def; public int X, Y, Rot;
     /// <summary>Optional recipe to preset on the new building (used by blueprints).</summary>
     public string Recipe;
-    public PlaceCmd(string def, int x, int y, int rot, string recipe = "") { Def = def; X = x; Y = y; Rot = rot; Recipe = recipe; }
+    public byte Bend;
+    public PlaceCmd(string def, int x, int y, int rot, string recipe = "", byte bend = 0) { Def = def; X = x; Y = y; Rot = rot; Recipe = recipe; Bend = bend; }
     public Result Execute(Simulation s, Player p)
     {
         if (!Simulation.InReach(p, X, Y)) return Result.Fail("Out of reach");
-        var r = s.Place(p, Def, X, Y, Rot);
+        var r = s.Place(p, Def, X, Y, Rot, bend: Bend);
         if (r.Ok && Recipe != "") s.PresetRecipe(X, Y, Recipe);
         return r;
     }
-    public void Write(BinaryWriter w) { w.Write(Def); w.Write(X); w.Write(Y); w.Write(Rot); w.Write(Recipe); }
-    public static PlaceCmd Read(BinaryReader r) => new(r.ReadString(), r.ReadInt32(), r.ReadInt32(), r.ReadInt32(), r.ReadString());
+    public void Write(BinaryWriter w) { w.Write(Def); w.Write(X); w.Write(Y); w.Write(Rot); w.Write(Recipe); w.Write(Bend); }
+    public static PlaceCmd Read(BinaryReader r) => new(r.ReadString(), r.ReadInt32(), r.ReadInt32(), r.ReadInt32(), r.ReadString(), r.ReadByte());
 }
 
 public sealed class RemoveCmd(int x, int y) : ICommand
@@ -170,6 +173,22 @@ public sealed class ChatCmd(string text) : ICommand
         return Result.Success;
     }
     public void Write(BinaryWriter w) => w.Write(text);
+}
+
+public sealed class SetBeltBendCmd(int x, int y, byte bend) : ICommand
+{
+    public int PlayerId { get; set; }
+    public byte Tag => 15;
+    public Result Execute(Simulation s, Player p) => Simulation.InReach(p, x, y) ? s.SetBeltBend(x, y, bend) : Result.Fail("Out of reach");
+    public void Write(BinaryWriter w) { w.Write(x); w.Write(y); w.Write(bend); }
+}
+
+public sealed class SetSplitterCmd(int building, byte inPriority, byte outPriority, string filter) : ICommand
+{
+    public int PlayerId { get; set; }
+    public byte Tag => 16;
+    public Result Execute(Simulation s, Player p) => s.SetSplitter(p, building, inPriority, outPriority, filter);
+    public void Write(BinaryWriter w) { w.Write(building); w.Write(inPriority); w.Write(outPriority); w.Write(filter); }
 }
 
 public sealed partial class Simulation

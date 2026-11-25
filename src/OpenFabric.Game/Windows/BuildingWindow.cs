@@ -1,4 +1,3 @@
-using System.Reflection;
 using Microsoft.Xna.Framework;
 using OpenFabric.Core.Data;
 using OpenFabric.Core.Sim;
@@ -18,8 +17,8 @@ public sealed class BuildingWindow : Window
     // ---- persistent UI state
     float scroll, contentH;
     int lastId = -1;
-    bool pickerOpen, wasShown;
-    string chanText = "";
+    bool pickerOpen, wasShown, filterPickerOpen;
+    string chanText = "", filterSearch = "";
     int chanFor = -1;
 
     // ---- per-frame layout state
@@ -32,20 +31,19 @@ public sealed class BuildingWindow : Window
 
     const int Slot = 40, Gap = 4;
     static readonly string[] DirNames = { "East", "South", "West", "North" };
-    static readonly FieldInfo? PosField = typeof(Window).GetField("pos", BindingFlags.NonPublic | BindingFlags.Instance);
     bool placed;
 
     public override void OnOpen(UiContext ctx)
     {
-        // Dock to the right side on the first open (base class keeps the position private -> reflection).
-        if (!placed && PosField != null)
+        // Dock to the right side on the first open.
+        if (!placed)
         {
             var scr = ctx.Ui.Screen;
             var sz = new Point(Math.Min(Size.X, scr.X - 20), Math.Min(Size.Y, scr.Y - 20));
-            PosField.SetValue(this, new Point?(new Point(Math.Max(0, scr.X - sz.X - 12), Math.Max(10, (scr.Y - sz.Y) / 2 - 20))));
+            pos = new Point(Math.Max(0, scr.X - sz.X - 12), Math.Max(10, (scr.Y - sz.Y) / 2 - 20));
         }
         placed = true;
-        scroll = 0; pickerOpen = false;
+        scroll = 0; pickerOpen = false; filterPickerOpen = false;
     }
 
     public override void DrawContent(UiContext ctx, Rectangle content)
@@ -62,7 +60,7 @@ public sealed class BuildingWindow : Window
             return;
         }
         b = bb; wasShown = true;
-        if (lastId != b.Id) { lastId = b.Id; scroll = 0; pickerOpen = false; chanFor = -1; }
+        if (lastId != b.Id) { lastId = b.Id; scroll = 0; pickerOpen = false; filterPickerOpen = false; chanFor = -1; }
 
         int y = content.Y;
         y = DrawHeader(content, y);
@@ -670,6 +668,23 @@ public sealed class BuildingWindow : Window
                 Line("Speed", $"{d.Prop("speed"):0.###} tiles/s");
                 Line("Throughput", $"{d.Prop("speed") * 4:0.#} items/s  ({d.Prop("speed") * 240:0}/min)");
                 Line("Carrying", $"{b.BeltCount} / 4 items");
+                int eff = c.Sim.BeltEffectiveBend(b);
+                Line("Shape", eff == 2 ? "Turn from Left" : eff == 3 ? "Turn from Right" : "Straight");
+                Heading("Angle / Curve (B)");
+                {
+                    var modes = new[] { ("Auto", (byte)0), ("Straight", (byte)1), ("From Left", (byte)2), ("From Right", (byte)3) };
+                    int bw = (lw - 18) / 4;
+                    for (int i = 0; i < modes.Length; i++)
+                    {
+                        var r = new Rectangle(lx + i * (bw + 6), (int)ly, bw, 28);
+                        if (ui.Button(r, modes[i].Item1, selected: b.BeltBend == modes[i].Item2))
+                            Send(new SetBeltBendCmd(b.X, b.Y, modes[i].Item2));
+                    }
+                    ly += 34;
+                }
+                break;
+            case "dual_splitter":
+                DrawDualSplitterUi();
                 break;
             case "splitter": case "merger":
                 Line("Throughput", b.Kind == "splitter" ? "Splits input evenly across 3 outputs" : "Merges 3 inputs into 1 output");
@@ -694,5 +709,74 @@ public sealed class BuildingWindow : Window
                 break;
         }
         DrawPowerUse();
+    }
+
+    void DrawDualSplitterUi()
+    {
+        var sim = c.Sim;
+        Line("Throughput", "Balances 2 inputs across 2 outputs");
+        Line("Buffered", $"{b.BeltCount} / 4 items");
+        Para("Left / Right are relative to the splitter's facing direction.", Theme.TextDim);
+
+        Heading("Input Priority");
+        DrawPrioRow(b.SplitterInPriority, p => Send(new SetSplitterCmd(b.Id, p, b.SplitterOutPriority, b.SplitterFilter ?? "")));
+
+        Heading("Output Priority");
+        DrawPrioRow(b.SplitterOutPriority, p => Send(new SetSplitterCmd(b.Id, b.SplitterInPriority, p, p == 0 ? "" : b.SplitterFilter ?? "")));
+
+        Heading("Output Filter");
+        if (b.SplitterOutPriority == 0)
+            Para("Select Left or Right output priority, or pick an item below (auto-sets Left).", Theme.TextDim);
+        else
+            Para($"Matching items go strictly to {(b.SplitterOutPriority == 1 ? "Left" : "Right")}; all others go to {(b.SplitterOutPriority == 1 ? "Right" : "Left")}.", Theme.TextDim);
+
+        if (b.SplitterFilter != null)
+        {
+            ui.ItemSlot(new Rectangle(lx, (int)ly, 36, 36), b.SplitterFilter);
+            g.Text(ItemName(b.SplitterFilter), new Vector2(lx + 44, ly + 10), Theme.FontNormal, Theme.Text);
+            if (ui.Button(new Rectangle(lx + lw - 90, (int)ly + 4, 90, 28), "Clear", "close"))
+                Send(new SetSplitterCmd(b.Id, b.SplitterInPriority, b.SplitterOutPriority, ""));
+            ly += 42;
+        }
+
+        if (ui.Button(new Rectangle(lx, (int)ly, lw, 28), filterPickerOpen ? "Hide filter items" : (b.SplitterFilter == null ? "Set filter item..." : "Change filter item..."), filterPickerOpen ? "expand_less" : "filter_alt"))
+            filterPickerOpen = !filterPickerOpen;
+        ly += 34;
+
+        if (filterPickerOpen)
+        {
+            filterSearch = ui.TextBox("bw_sfilt", new Rectangle(lx, (int)ly, lw, 26), filterSearch, "Search item...");
+            ly += 32;
+            var q = filterSearch.Trim();
+            var items = sim.Data.Items.Values
+                .Where(it => !it.Fluid && (q.Length == 0 || it.Name.Contains(q, StringComparison.OrdinalIgnoreCase)))
+                .OrderBy(it => it.Tier).ThenBy(it => it.Name)
+                .Take(48).ToList();
+            int cols = Math.Max(1, (lw + Gap) / (Slot + Gap));
+            for (int i = 0; i < items.Count; i++)
+            {
+                var r = new Rectangle(lx + (i % cols) * (Slot + Gap), (int)ly + (i / cols) * (Slot + Gap), Slot, Slot);
+                if (ui.ItemSlot(r, items[i].Id, -1, b.SplitterFilter == items[i].Id))
+                {
+                    byte outPrio = b.SplitterOutPriority == 0 ? (byte)1 : b.SplitterOutPriority;
+                    Send(new SetSplitterCmd(b.Id, b.SplitterInPriority, outPrio, items[i].Id));
+                    filterPickerOpen = false;
+                }
+            }
+            if (items.Count == 0) { g.Text("No matching items", new Vector2(lx, ly), Theme.FontNormal, Theme.TextDim); ly += 22; }
+            else ly += ((items.Count + cols - 1) / cols) * (Slot + Gap) + 4;
+        }
+    }
+
+    void DrawPrioRow(byte cur, Action<byte> set)
+    {
+        var opts = new[] { ("Left", (byte)1), ("Balanced", (byte)0), ("Right", (byte)2) };
+        int bw = (lw - 12) / 3;
+        for (int i = 0; i < opts.Length; i++)
+        {
+            var r = new Rectangle(lx + i * (bw + 6), (int)ly, bw, 28);
+            if (ui.Button(r, opts[i].Item1, selected: cur == opts[i].Item2)) set(opts[i].Item2);
+        }
+        ly += 34;
     }
 }
