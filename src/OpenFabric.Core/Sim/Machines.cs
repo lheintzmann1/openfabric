@@ -59,7 +59,7 @@ public sealed partial class Simulation
             foreach (var inp in r.Inputs) if (!b.In.Has(inp.Item, inp.Amount)) { have = false; break; }
             if (!have)
             {
-                if (b.Def.Prop("autoRecipe") > 0 && b.In.IsEmpty && b.Out.IsEmpty) b.Recipe = null;
+                if (b.Def.Prop("autoRecipe") > 0 && !b.ManualRecipe && b.In.IsEmpty && b.Out.IsEmpty) b.Recipe = null;
                 return;
             }
             foreach (var o in r.Outputs)

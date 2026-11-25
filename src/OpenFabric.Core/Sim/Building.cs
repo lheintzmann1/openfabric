@@ -32,6 +32,8 @@ public sealed class Building
 
     // --- crafting / generic state
     public string? Recipe;
+    /// <summary>True when the player picked the recipe; auto-recipe machines then never reset it.</summary>
+    public bool ManualRecipe;
     public double Progress;
     public bool Crafting;
     /// <summary>Did the building do useful work last tick (drives power draw + animation).</summary>

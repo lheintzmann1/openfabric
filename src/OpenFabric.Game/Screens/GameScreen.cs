@@ -36,6 +36,8 @@ public sealed class GameScreen : Screen
     Blueprint? pasting;
     (int x, int y)? selStart;
     bool disconnectedShown;
+    int pausePage; // 0 menu, 1 controls
+    float controlsScroll;
     string chatText = "";
     bool chatOpen, chatFresh;
     Point lastMouse;
@@ -130,7 +132,7 @@ public sealed class GameScreen : Screen
             HandleHotkeys();
             HandleMovement(dt);
         }
-        else if (ui.KeyPressed(Keys.Escape)) paused = false;
+        else if (ui.KeyPressed(Keys.Escape) && !Controls.Listening) { if (pausePage != 0) pausePage = 0; else paused = false; }
 
         // world interaction happens after widgets had their chance to claim the mouse (UI is drawn in Draw, so we use last frame's OverUi)
         if (!paused) HandleWorldInput(dt);
@@ -172,7 +174,7 @@ public sealed class GameScreen : Screen
         var ui = Ui;
         if (chatOpen && ui.FocusId != "chat") chatOpen = false;
         if (ui.TextFocused) { if (ui.KeyPressed(Keys.Escape)) { ui.FocusId = null; chatOpen = false; } return; }
-        if (ui.KeyPressed(Keys.Enter) && Session.IsMultiplayer) { chatOpen = true; chatFresh = true; ui.FocusId = "chat"; chatText = ""; return; }
+        if (ui.KeyPressed(Controls.Get("chat")) && Session.IsMultiplayer) { chatOpen = true; chatFresh = true; ui.FocusId = "chat"; chatText = ""; return; }
         if (ui.KeyPressed(Keys.Escape))
         {
             if (pasting != null) pasting = null;
@@ -180,18 +182,18 @@ public sealed class GameScreen : Screen
             else if (!windows.CloseTop()) paused = true;
         }
         if (ui.Ctrl && ui.KeyPressed(Keys.V) && clipboard != null && clipboard.Count > 0) { pasting = clipboard; ctx.HeldBuild = null; Session.Toast($"Pasting {pasting.Count} buildings — R rotates, click to place, Esc cancels"); }
-        if (pasting != null && ui.KeyPressed(Keys.R)) pasting = pasting.Rotated();
-        if (ui.KeyPressed(Keys.F3)) showDebug = !showDebug;
-        if (ui.KeyPressed(Keys.M)) showMinimap = !showMinimap;
-        if (ui.KeyPressed(Keys.O)) buildings.PowerOverlay = !buildings.PowerOverlay;
-        if (ui.KeyPressed(Keys.F5)) SaveGame(quiet: false);
-        if (ui.KeyPressed(Keys.R) && ctx.HeldBuild != null && pasting == null) ctx.HeldRot = Dir.Norm(ctx.HeldRot + (ui.Shift ? -1 : 1));
-        if (ui.KeyPressed(Keys.R) && ctx.HeldBuild == null && pasting == null && !ui.WasOverUi)
+        if (pasting != null && ui.KeyPressed(Controls.Get("rotate"))) pasting = pasting.Rotated();
+        if (ui.KeyPressed(Controls.Get("debug"))) showDebug = !showDebug;
+        if (ui.KeyPressed(Controls.Get("minimap"))) showMinimap = !showMinimap;
+        if (ui.KeyPressed(Controls.Get("power_overlay"))) buildings.PowerOverlay = !buildings.PowerOverlay;
+        if (ui.KeyPressed(Controls.Get("quicksave"))) SaveGame(quiet: false);
+        if (ui.KeyPressed(Controls.Get("rotate")) && ctx.HeldBuild != null && pasting == null) ctx.HeldRot = Dir.Norm(ctx.HeldRot + (ui.Shift ? -1 : 1));
+        if (ui.KeyPressed(Controls.Get("rotate")) && ctx.HeldBuild == null && pasting == null && !ui.WasOverUi)
         {
             var (tx, ty) = MouseTile();
             if (Sim.At(tx, ty) is { } hb) Session.Send(new RotateCmd(tx, ty));
         }
-        if (ui.KeyPressed(Keys.Q))
+        if (ui.KeyPressed(Controls.Get("pipette")))
         {
             if (ctx.HeldBuild != null) ctx.HeldBuild = null;
             else
@@ -201,8 +203,8 @@ public sealed class GameScreen : Screen
             }
         }
         // category cycling and number keys pick buildings
-        if (ui.KeyPressed(Keys.OemComma)) CycleCategory(-1);
-        if (ui.KeyPressed(Keys.OemPeriod)) CycleCategory(1);
+        if (ui.KeyPressed(Controls.Get("category_prev"))) CycleCategory(-1);
+        if (ui.KeyPressed(Controls.Get("category_next"))) CycleCategory(1);
         var list = InCategory(category);
         for (int i = 0; i < 9; i++)
             if (ui.KeyPressed(Keys.D1 + i) && i < list.Count) { ctx.HeldBuild = list[i].Id; }
@@ -243,10 +245,10 @@ public sealed class GameScreen : Screen
         var ui = Ui;
         if (ui.TextFocused) return;
         var dir = Vector2.Zero;
-        if (ui.KeyDown(Keys.W) || ui.KeyDown(Keys.Up)) dir.Y -= 1;
-        if (ui.KeyDown(Keys.S) || ui.KeyDown(Keys.Down)) dir.Y += 1;
-        if (ui.KeyDown(Keys.A) || ui.KeyDown(Keys.Left)) dir.X -= 1;
-        if (ui.KeyDown(Keys.D) || ui.KeyDown(Keys.Right)) dir.X += 1;
+        if (ui.KeyDown(Controls.Get("move_up")) || ui.KeyDown(Keys.Up)) dir.Y -= 1;
+        if (ui.KeyDown(Controls.Get("move_down")) || ui.KeyDown(Keys.Down)) dir.Y += 1;
+        if (ui.KeyDown(Controls.Get("move_left")) || ui.KeyDown(Keys.Left)) dir.X -= 1;
+        if (ui.KeyDown(Controls.Get("move_right")) || ui.KeyDown(Keys.Right)) dir.X += 1;
         if (dir == Vector2.Zero) return;
         dir.Normalize();
         float speed = 7f * (ui.Shift ? 2.0f : 1f) * (float)(1 + Sim.Team.Mod("moveSpeed"));
@@ -596,8 +598,12 @@ public sealed class GameScreen : Screen
             bool me = p.Id == Session.LocalId;
             if (!p.Online && !me) continue;
             var s = cam.WorldToScreen(me ? MyPos : new Vector2(p.X, p.Y));
-            G.Icon("person_pin_circle", s, MathF.Max(22, cam.Zoom * 0.9f), me ? Gfx.Hex("#ffd54a") : Gfx.Hex("#7be0ff"), shadow: true);
-            if (!me) G.Text(p.Name, s + new Vector2(-G.Measure(p.Name, 12).X / 2, -cam.Zoom * 0.9f - 6), 12, Color.White);
+            float d = MathF.Max(16, cam.Zoom * 0.6f);
+            var col = me ? Gfx.Hex("#ffd54a") : Gfx.Hex("#7be0ff");
+            G.Icon("circle", s + new Vector2(1.5f, 2f), d + 4, new Color(0, 0, 0, 90));   // soft shadow
+            G.Icon("circle", s, d + 4, new Color(20, 24, 32));                            // outline
+            G.Icon("circle", s, d, col);
+            if (!me) G.Text(p.Name, s + new Vector2(-G.Measure(p.Name, 12).X / 2, -d - 8), 12, Color.White);
         }
     }
 
@@ -646,7 +652,7 @@ public sealed class GameScreen : Screen
         {
             var win = w;
             if (win.Id == "building") continue;
-            toolbar.Add((win.Icon, $"{win.Title}" + (win.Hotkey != Keys.None ? $" ({win.Hotkey})" : ""), () => windows.Open(win, ctx) , win.Open));
+            toolbar.Add((win.Icon, $"{win.Title}" + (Controls.ForWindow(win.Id, win.Hotkey) != Keys.None ? $" ({Controls.KeyName(Controls.ForWindow(win.Id, win.Hotkey))})" : ""), () => windows.Open(win, ctx) , win.Open));
         }
         toolbar.Add(("map", "Minimap (M)", () => showMinimap = !showMinimap, showMinimap));
         toolbar.Add(("electric_bolt", "Power overlay (O)", () => buildings.PowerOverlay = !buildings.PowerOverlay, buildings.PowerOverlay));
@@ -956,11 +962,20 @@ public sealed class GameScreen : Screen
     {
         var ui = Ui; var g = G;
         g.Rect(new Rectangle(0, 0, ui.Screen.X, ui.Screen.Y), new Color(0, 0, 0, 150));
-        var r = new Rectangle(ui.Screen.X / 2 - 160, ui.Screen.Y / 2 - 150, 320, 300);
+        if (pausePage == 1)
+        {
+            var cr = new Rectangle(ui.Screen.X / 2 - 330, Math.Max(10, ui.Screen.Y / 2 - 300), 660, Math.Min(600, ui.Screen.Y - 20));
+            ui.Panel(cr, "Controls");
+            Controls.DrawPanel(ui, new Rectangle(cr.X + 14, cr.Y + 42, cr.Width - 28, cr.Height - 100), ref controlsScroll);
+            if (ui.Button(new Rectangle(cr.X + 14, cr.Bottom - 46, cr.Width - 28, 36), "Back", "arrow_back")) { pausePage = 0; Controls.StopListening(); }
+            return;
+        }
+        var r = new Rectangle(ui.Screen.X / 2 - 160, ui.Screen.Y / 2 - 190, 320, 354);
         ui.Panel(r, "Paused");
         int y = r.Y + 44;
         Rectangle B() { var x = new Rectangle(r.X + 20, y, r.Width - 40, 44); y += 54; return x; }
         if (ui.Button(B(), "Resume", "play_arrow")) paused = false;
+        if (ui.Button(B(), "Controls", "keyboard")) pausePage = 1;
         if (ui.Button(B(), "Save", "save")) SaveGame(false);
         if (ui.Button(B(), "Save & Main Menu", "home")) { SaveGame(true); Host.SetScreen(new MainMenuScreen(Host)); }
         if (ui.Button(B(), "Quit Game", "power_settings_new")) { SaveGame(true); Host.Quit = true; }

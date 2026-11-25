@@ -275,3 +275,25 @@ public class SimTests
         Ok(sim.Place(null, "chest", x, y, 0));
     }
 }
+
+public class RecipeSelectionTests
+{
+    [Fact]
+    public void ManualRecipeOnAutoMachineSurvivesEmptyBuffers()
+    {
+        var sim = TestData.NewSim();
+        var (x, y) = TestData.FindFlat(sim, 6, 6);
+        Assert.True(sim.Place(null, "furnace", x, y, 0).Ok);
+        var f = sim.At(x, y)!;
+        Assert.True(sim.Execute(new SetRecipeCmd(f.Id, "iron_smelt") { PlayerId = 1 }).Ok);
+        TestData.Run(sim, 5); // empty buffers for a while: must stay selected
+        Assert.Equal("iron_smelt", f.Recipe);
+        // survives save/load
+        var copy = Simulation.LoadFromBytes(TestData.Make(), sim.SaveToBytes());
+        Assert.Equal("iron_smelt", copy.At(x, y)!.Recipe);
+        // clearing re-enables auto selection
+        Assert.True(sim.Execute(new SetRecipeCmd(f.Id, "") { PlayerId = 1 }).Ok);
+        TestData.Run(sim, 1);
+        Assert.Null(f.Recipe);
+    }
+}

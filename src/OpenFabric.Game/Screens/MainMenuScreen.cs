@@ -15,7 +15,8 @@ public sealed class MainMenuScreen : Screen
     double t;
     string hostPort = "27015", joinAddr = "127.0.0.1:27015", name = "Engineer";
     string? error;
-    int page; // 0 main, 1 new game, 2 multiplayer
+    int page; // 0 main, 1 new game, 2 multiplayer, 3 controls
+    float controlsScroll;
 
     public MainMenuScreen(OpenFabricGame host) : base(host)
     {
@@ -63,7 +64,7 @@ public sealed class MainMenuScreen : Screen
         var sub = "Build. Automate. Ascend.";
         gfx.Text(sub, new Vector2(cxm - gfx.Measure(sub, 18).X / 2, 168), 18, Theme.TextDim);
 
-        var panel = new Rectangle(cxm - 190, 220, 380, 330);
+        var panel = new Rectangle(cxm - 190, 220, 380, page == 0 ? 390 : 330);
         ui.Panel(panel);
         int y = panel.Y + 18;
         Rectangle Btn() { var r = new Rectangle(panel.X + 24, y, panel.Width - 48, 42); y += 52; return r; }
@@ -74,7 +75,15 @@ public sealed class MainMenuScreen : Screen
             if (ui.Button(Btn(), "Continue", "play_arrow", enabled: hasSave)) TryLoad();
             if (ui.Button(Btn(), "New Game", "add_circle_outline")) page = 1;
             if (ui.Button(Btn(), "Multiplayer", "groups")) page = 2;
+            if (ui.Button(Btn(), "Controls", "keyboard")) page = 3;
             if (ui.Button(Btn(), "Quit", "power_settings_new")) Host.Quit = true;
+        }
+        else if (page == 3)
+        {
+            panel = new Rectangle(cxm - 330, 200, 660, Math.Min(560, ui.Screen.Y - 220));
+            ui.Panel(panel, "Controls");
+            Controls.DrawPanel(ui, new Rectangle(panel.X + 14, panel.Y + 42, panel.Width - 28, panel.Height - 100), ref controlsScroll);
+            if (ui.Button(new Rectangle(panel.X + 14, panel.Bottom - 46, panel.Width - 28, 36), "Back", "arrow_back")) { page = 0; Controls.StopListening(); }
         }
         else if (page == 1)
         {
@@ -111,8 +120,9 @@ public sealed class MainMenuScreen : Screen
             if (ui.Button(new Rectangle(panel.X + 24, y, panel.Width - 48, 36), "Back", "arrow_back")) { page = 0; error = null; }
             if (error != null) gfx.Text(error.Length > 48 ? error[..48] : error, new Vector2(panel.X + 24, panel.Bottom - 22), 12, Theme.Bad);
         }
-        gfx.Text("WASD move · LMB mine/build · RMB demolish · R rotate · Q pipette · E inventory · T milestones · F stats",
-            new Vector2(cxm - 330, ui.Screen.Y - 34), 13, Theme.TextDim);
+        string K(string id) => Controls.KeyName(Controls.Get(id));
+        var tip = $"{K("move_up")}{K("move_left")}{K("move_down")}{K("move_right")} move · LMB mine/build · RMB demolish · {K("rotate")} rotate · {K("pipette")} pipette · {K("win_inventory")} inventory · {K("win_tech")} milestones · {K("win_stats")} stats";
+        gfx.Text(tip, new Vector2(cxm - gfx.Measure(tip, 13).X / 2, ui.Screen.Y - 34), 13, Theme.TextDim);
         sb.End();
     }
 

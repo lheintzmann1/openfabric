@@ -36,7 +36,7 @@ public sealed class OpenFabricGame : Microsoft.Xna.Framework.Game
     {
         get
         {
-            var d = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "OpenFabric", "saves");
+            var d = Path.Combine(AppPaths.DataDir, "saves");
             Directory.CreateDirectory(d);
             return d;
         }
@@ -68,6 +68,7 @@ public sealed class OpenFabricGame : Microsoft.Xna.Framework.Game
         foreach (var b in Data.Buildings.Values) b.Icon = "buildings/" + b.Id;
         foreach (var r in Data.Research.Values) r.Icon = "research/" + r.Id;
         foreach (var r in Data.Resources) r.Icon = "resources/" + r.Item;
+        Controls.Load();
         Ui = new Ui(Gfx, Data);
         Window.TextInput += (_, e) => Ui.FeedChar(e.Character);
 

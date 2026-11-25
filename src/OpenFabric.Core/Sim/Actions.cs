@@ -235,6 +235,7 @@ public sealed partial class Simulation
         if (b.Crafting && CurrentRecipe(b) is { } cur) foreach (var i in cur.Inputs) if (!Data.Items[i.Item].Fluid) p.Inv.Add(i.Item, i.Amount);
         Dump(b.In); Dump(b.Out);
         b.Recipe = recipeId == "" ? null : recipeId;
+        b.ManualRecipe = recipeId != "";
         b.Crafting = false; b.Progress = 0;
         return Result.Success;
     }
@@ -244,7 +245,7 @@ public sealed partial class Simulation
     {
         var b = At(x, y);
         if (b == null || !crafterKinds.Contains(b.Kind)) return;
-        if (Data.Recipes.TryGetValue(recipeId, out var r) && r.Machine == b.Kind && Team.IsUnlocked(recipeId)) b.Recipe = recipeId;
+        if (Data.Recipes.TryGetValue(recipeId, out var r) && r.Machine == b.Kind && Team.IsUnlocked(recipeId)) { b.Recipe = recipeId; b.ManualRecipe = true; }
     }
 
     public Result SetChannel(Player p, int buildingId, int channel)

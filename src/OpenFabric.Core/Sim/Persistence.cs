@@ -68,7 +68,7 @@ public sealed partial class Simulation
     static void WriteBuilding(BinaryWriter w, Building b)
     {
         w.Write(b.Id); w.Write(b.Def.Id); w.Write(b.X); w.Write(b.Y); w.Write(b.Rot);
-        w.Write(b.Recipe ?? ""); w.Write(b.Progress); w.Write(b.Crafting); w.Write(b.Active);
+        w.Write(b.Recipe ?? ""); w.Write(b.ManualRecipe); w.Write(b.Progress); w.Write(b.Crafting); w.Write(b.Active);
         b.In.Write(w); b.Out.Write(w); b.Fuel.Write(w);
         w.Write(b.FuelLeftMJ); w.Write(b.Acc); w.Write(b.Clock); w.Write(b.Rr);
         w.Write(b.BeltCount);
@@ -121,7 +121,7 @@ public sealed partial class Simulation
             int x = r.ReadInt32(), y = r.ReadInt32(), rot = r.ReadInt32();
             if (!data.Buildings.TryGetValue(defId, out var def)) throw new InvalidDataException("Unknown building " + defId);
             var b = s.CreateBuilding(def, x, y, rot, id);
-            var recipe = r.ReadString(); b.Recipe = recipe == "" ? null : recipe;
+            var recipe = r.ReadString(); b.Recipe = recipe == "" ? null : recipe; b.ManualRecipe = r.ReadBoolean();
             b.Progress = r.ReadDouble(); b.Crafting = r.ReadBoolean(); b.Active = r.ReadBoolean();
             b.In.Read(r); b.Out.Read(r); b.Fuel.Read(r);
             if (def.Kind is "chest" or "hub") b.In.MaxSlots = (int)def.Prop("slots", 24);

@@ -54,6 +54,13 @@ public sealed class Ui
 
     public bool KeyPressed(Keys k) => kb.IsKeyDown(k) && prevKb.IsKeyUp(k);
     public bool KeyDown(Keys k) => kb.IsKeyDown(k);
+    /// <summary>First key that went down this frame (for rebinding), or null.</summary>
+    public Keys? AnyKeyPressed()
+    {
+        foreach (var k in kb.GetPressedKeys())
+            if (prevKb.IsKeyUp(k) && k is not (Keys.LeftShift or Keys.RightShift or Keys.LeftControl or Keys.RightControl or Keys.LeftAlt or Keys.RightAlt)) return k;
+        return null;
+    }
     public void FeedChar(char c) => typed.Add(c);
     public void EndFrameInput() => typed.Clear();
 

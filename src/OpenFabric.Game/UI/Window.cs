@@ -101,7 +101,7 @@ public sealed class WindowManager
         var ui = c.Ui;
         if (!ui.TextFocused)
             foreach (var w in Windows.ToList())
-                if (w.Hotkey != Keys.None && ui.KeyPressed(w.Hotkey))
+                if (Controls.ForWindow(w.Id, w.Hotkey) is var hk && hk != Keys.None && ui.KeyPressed(hk))
                 {
                     if (w.Open) w.Open = false; else Open(w, c);
                 }

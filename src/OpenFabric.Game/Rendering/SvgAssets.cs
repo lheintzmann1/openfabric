@@ -24,7 +24,7 @@ public sealed class SvgAssets
     public SvgAssets(GraphicsDevice gd, string assetDir)
     {
         this.gd = gd;
-        var user = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "OpenFabric", "assets");
+        var user = Path.Combine(AppPaths.DataDir, "assets");
         roots = new[] { user, assetDir };
     }
 
