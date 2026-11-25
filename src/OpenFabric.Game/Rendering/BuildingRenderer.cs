@@ -32,6 +32,16 @@ public sealed class BuildingRenderer
         return new Rectangle(sx, sy, (int)MathF.Floor(b.X) - sx, (int)MathF.Floor(b.Y) - sy);
     }
 
+    static bool Directional(string kind) => kind is "belt" or "splitter" or "merger" or "underground" or "loader";
+
+    /// <summary>Draw the building's SVG sprite centred on the footprint (rotated for directional kinds, quarter-turn for others).</summary>
+    bool Sprite(BuildingDef def, Vector2 centre, int rot, Color tint)
+    {
+        float z = cam.Zoom;
+        float r = (Directional(def.Kind) ? rot : (rot & 1)) * MathHelper.PiOver2;
+        return g.Sprite("buildings/" + def.Id, centre, def.W * z + 0.5f, def.H * z + 0.5f, tint, r);
+    }
+
     public void Draw(Simulation sim)
     {
         var (x0, y0, x1, y1) = cam.VisibleTiles();
@@ -90,6 +100,7 @@ public sealed class BuildingRenderer
     {
         var r = TileRect(b.X, b.Y);
         var body = Col(b.Def.Color);
+        if (cam.Zoom >= 6 && Sprite(b.Def, new Vector2(r.Center.X, r.Center.Y), b.Rot, Color.White)) return;
         g.Rect(r, Mul(body, 0.28f));
         if (cam.Zoom < 6) return;
         g.Rect(new Rectangle(r.X + 1, r.Y + 1, r.Width - 2, r.Height - 2), Mul(body, 0.38f));
@@ -179,6 +190,7 @@ public sealed class BuildingRenderer
     {
         var r = TileRect(b.X, b.Y);
         var c = new Vector2(r.Center.X, r.Center.Y);
+        if (cam.Zoom >= 8 && g.Sprite("buildings/" + b.Def.Id, c, cam.Zoom * 0.9f, cam.Zoom * 0.9f, Color.White)) return;
         float s = Math.Max(3, cam.Zoom * 0.28f);
         g.Rect(c.X - s / 2 - 1, c.Y - s / 2 - 1, s + 2, s + 2, new Color(20, 20, 20));
         g.Rect(c.X - s / 2, c.Y - s / 2, s, s, Col(b.Def.Color));
@@ -188,10 +200,14 @@ public sealed class BuildingRenderer
     {
         var r = TileRect(b.X, b.Y);
         var body = Col(b.Def.Color);
+        bool art = cam.Zoom >= 8 && Sprite(b.Def, new Vector2(r.Center.X, r.Center.Y), b.Rot, Color.White);
+        if (!art)
+        {
         g.Rect(r, Mul(body, 0.28f));
         g.Rect(new Rectangle(r.X + 1, r.Y + 1, r.Width - 2, r.Height - 2), Mul(body, 0.5f));
         g.Outline(r, Mul(body, 0.9f));
-        if (cam.Zoom >= 10)
+        }
+        if (!art && cam.Zoom >= 10)
             g.IconRot(b.Def.Icon, new Vector2(r.Center.X, r.Center.Y), cam.Zoom * 0.72f, Color.White * 0.95f, b.Rot * MathHelper.PiOver2);
         if (b.Kind == "underground" && cam.Zoom >= 10)
         {
@@ -206,15 +222,19 @@ public sealed class BuildingRenderer
         var r = TileRect(b.X, b.Y, b.W, b.H);
         var body = Col(b.Def.Color);
         float z = cam.Zoom;
-        g.Rect(r, Mul(body, 0.22f));
-        var inner = new Rectangle(r.X + 2, r.Y + 2, r.Width - 4, r.Height - 4);
-        g.Rect(inner, Mul(body, 0.40f));
-        g.Outline(r, Mul(body, 0.95f), z >= 20 ? 2 : 1);
-
         var state = BuildingInfo.State(sim, b);
         var center = new Vector2(r.Center.X, r.Center.Y);
+        float pulseA = state == BuildingState.Working ? 0.92f + 0.08f * MathF.Sin((float)Time * 8 + b.Id) : (state == BuildingState.Passive ? 1f : 0.8f);
+        bool art = Sprite(b.Def, center, b.Rot, Color.White * pulseA);
+        if (!art)
+        {
+            g.Rect(r, Mul(body, 0.22f));
+            var inner = new Rectangle(r.X + 2, r.Y + 2, r.Width - 4, r.Height - 4);
+            g.Rect(inner, Mul(body, 0.40f));
+            g.Outline(r, Mul(body, 0.95f), z >= 20 ? 2 : 1);
+        }
         float iconSize = Math.Min(r.Width, r.Height) * 0.58f;
-        if (z >= 8)
+        if (!art && z >= 8)
         {
             bool spin = state == BuildingState.Working;
             float pulse = spin ? 0.9f + 0.1f * MathF.Sin((float)Time * 8 + b.Id) : 0.7f;
@@ -278,10 +298,11 @@ public sealed class BuildingRenderer
         var r = TileRect(x, y, w, h);
         var tint = ok ? new Color(110, 255, 150) : new Color(255, 90, 90);
         var body = Col(def.Color);
-        g.Rect(r, Color.Lerp(Mul(body, 0.5f, 170), tint * 0.5f, 0.45f));
-        g.Outline(r, tint, 2);
         var c = new Vector2(r.Center.X, r.Center.Y);
-        if (cam.Zoom >= 8)
+        bool art = cam.Zoom >= 6 && Sprite(def, c, rot, Color.White * 0.75f);
+        g.Rect(r, art ? tint * 0.22f : Color.Lerp(Mul(body, 0.5f, 170), tint * 0.5f, 0.45f));
+        g.Outline(r, tint, 2);
+        if (!art && cam.Zoom >= 8)
         {
             bool dirIcon = def.Kind is "belt" or "splitter" or "merger" or "underground" or "loader";
             if (dirIcon) g.IconRot(def.Kind == "belt" ? "arrow_forward" : def.Icon, c, Math.Min(r.Width, r.Height) * 0.75f, Color.White * 0.9f, rot * MathHelper.PiOver2);

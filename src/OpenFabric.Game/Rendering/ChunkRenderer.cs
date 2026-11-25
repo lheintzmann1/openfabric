@@ -27,7 +27,19 @@ public sealed class ChunkRenderer
         Gfx.Hex("#eef3f7"), // snow
     };
 
-    public ChunkRenderer(GraphicsDevice gd, WorldMap map) { this.gd = gd; this.map = map; }
+    static readonly string[] Names = { "deep_water", "water", "sand", "grass", "forest", "rock", "cliff", "snow" };
+    Color[] palette = (Color[])Palette.Clone();
+    public SvgAssets? Svg;
+
+    public ChunkRenderer(GraphicsDevice gd, WorldMap map, SvgAssets? svg = null) { this.gd = gd; this.map = map; Svg = svg; RefreshPalette(); }
+
+    /// <summary>Zoomed-out terrain colours come from the average colour of each terrain SVG (falls back to the built-in palette).</summary>
+    public void RefreshPalette()
+    {
+        palette = (Color[])Palette.Clone();
+        if (Svg == null) return;
+        for (int i = 0; i < Names.Length; i++) if (Svg.Average("terrain/" + Names[i]) is { } c) palette[i] = c;
+    }
 
     static long Key(int cx, int cy) => ((long)cx << 32) ^ (uint)cy;
 
@@ -53,7 +65,7 @@ public sealed class ChunkRenderer
             {
                 int i = Chunk.Idx(lx, ly);
                 int x = c.Cx * Chunk.Size + lx, y = c.Cy * Chunk.Size + ly;
-                var col = Palette[(int)c.Terrain[i]];
+                var col = palette[(int)c.Terrain[i]];
                 float shade = 0.94f + 0.12f * Noise.Unit(0xC0FFEEu, x, y);
                 col = new Color((int)(col.R * shade), (int)(col.G * shade), (int)(col.B * shade));
                 if (c.Res[i] != 0)

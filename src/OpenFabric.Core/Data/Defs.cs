@@ -8,7 +8,7 @@ public sealed class ItemDef
     public string Id { get; init; } = "";
     public string Name { get; init; } = "";
     /// <summary>Material icon name (see Assets/fonts/MaterialIcons-Regular.codepoints).</summary>
-    public string Icon { get; init; } = "help_outline";
+    public string Icon { get; set; } = "help_outline";
     public string Color { get; init; } = "#ffffff";
     public string Category { get; init; } = "misc";
     public int Tier { get; init; }
@@ -39,7 +39,7 @@ public sealed class BuildingDef
 {
     public string Id { get; init; } = "";
     public string Name { get; init; } = "";
-    public string Icon { get; init; } = "help_outline";
+    public string Icon { get; set; } = "help_outline";
     public string Color { get; init; } = "#888888";
     public string Category { get; init; } = "misc";
     /// <summary>Behaviour kind: drill, smelter, assembler, belt, splitter, merger, tunnel, chest, pole, generator, pipe, pump, tank, lab, hub, ...</summary>
@@ -89,7 +89,7 @@ public sealed class ResourceDef
     /// <summary>Item id produced by extracting this resource.</summary>
     public string Item { get; init; } = "";
     public string Name { get; init; } = "";
-    public string Icon { get; init; } = "circle";
+    public string Icon { get; set; } = "circle";
     public string Color { get; init; } = "#ffffff";
     public ResourceKind Kind { get; init; } = ResourceKind.Solid;
     /// <summary>Minimum distance from spawn (tiles) at which random patches of this type appear.</summary>
@@ -109,7 +109,7 @@ public sealed class ResearchDef
     public string Id { get; init; } = "";
     public string Name { get; init; } = "";
     public string Description { get; init; } = "";
-    public string Icon { get; init; } = "science";
+    public string Icon { get; set; } = "science";
     public int Tier { get; init; }
     /// <summary>Science packs (items) consumed in total.</summary>
     public List<Stack> Cost { get; init; } = new();

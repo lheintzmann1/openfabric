@@ -4,7 +4,8 @@ An original 2D top-down factory game inspired by Factorio and Satisfactory. Mine
 automate your way through **13 tiers** — from a hand drill and stone furnace to arc furnaces, oil, nuclear fission,
 fusion and an orbital megaproject. Procedurally generated infinite maps, solo or small-group co-op.
 
-C# .NET 10 + MonoGame (DesktopGL). No sprites: everything is drawn from Google Material Icons glyphs.
+C# .NET 10 + MonoGame (DesktopGL). All art is SVG, one file per item/building/terrain/…, ready to be replaced with your own
+(see [Assets/README.md](src/OpenFabric.Game/Assets/README.md); F9 reloads them in game).
 All content (items, recipes, buildings, milestones, research) lives in `data/*.json`; see [data/SCHEMA.md](data/SCHEMA.md).
 
 ## Run / build / test
@@ -30,8 +31,9 @@ Other flags: `--load` (autosave), `--cheat` (unlock everything + items), `--demo
 | E | inventory + hand crafting |
 | T | milestones (deliver items at the HQ) + research tree |
 | F | production / power statistics · G recipe book |
+| hover | inspector at the top: machine status, recipe, buffers, power, ore amount, terrain |
 | click a building | open its panel (recipes, buffers, power) |
-| M / O / F3 / F5 / Esc | minimap / power overlay / debug / save / menu |
+| M / O / F3 / F5 / F9 / Esc | minimap / power overlay / debug / save / reload SVG art / menu |
 | Enter (multiplayer) | chat |
 
 ## How it plays

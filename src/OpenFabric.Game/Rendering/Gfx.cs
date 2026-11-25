@@ -9,6 +9,7 @@ public sealed class Gfx
 {
     public readonly SpriteBatch Sb;
     public readonly Texture2D Pixel;
+    public readonly SvgAssets Svg;
     readonly FontSystem text = new();
     readonly FontSystem icons = new();
     readonly Dictionary<string, string> codepoints = new();
@@ -16,6 +17,7 @@ public sealed class Gfx
     public Gfx(GraphicsDevice gd, string assetDir)
     {
         Sb = new SpriteBatch(gd);
+        Svg = new SvgAssets(gd, assetDir);
         Pixel = new Texture2D(gd, 1, 1);
         Pixel.SetData(new[] { Color.White });
         text.AddFont(File.ReadAllBytes(Path.Combine(assetDir, "fonts", "Inter.ttf")));
@@ -57,6 +59,8 @@ public sealed class Gfx
     /// <summary>Draws a Material icon centred on <paramref name="center"/>.</summary>
     public void Icon(string name, Vector2 center, float px, Color c, bool shadow = false)
     {
+        if (TrySvgIcon(name, center, px, c, 0f, shadow)) return;
+        if (name.Contains('/')) name = "help_outline";
         if (!codepoints.TryGetValue(name, out var g)) g = codepoints["help_outline"];
         var f = icons.GetFont(Math.Max(8, (int)MathF.Round(px)));
         var size = f.MeasureString(g);
@@ -68,10 +72,44 @@ public sealed class Gfx
     /// <summary>Icon rotated clockwise by <paramref name="rot"/> radians around its centre.</summary>
     public void IconRot(string name, Vector2 center, float px, Color c, float rot)
     {
+        if (TrySvgIcon(name, center, px, c, rot, false)) return;
+        if (name.Contains('/')) name = "help_outline";
         if (!codepoints.TryGetValue(name, out var g)) g = codepoints["help_outline"];
         var f = icons.GetFont(Math.Max(8, (int)MathF.Round(px)));
         var size = f.MeasureString(g);
         Sb.DrawString(f, g, center, c, rot, size * 0.5f);
+    }
+
+    /// <summary>
+    /// SVG icon lookup. "items/x", "buildings/x", ... are full-colour art (the tint's alpha is used, its colour ignored);
+    /// plain names like "close" resolve to ui/close.svg and are tinted like the font glyphs.
+    /// </summary>
+    bool TrySvgIcon(string name, Vector2 center, float px, Color c, float rot, bool shadow)
+    {
+        bool full = name.Contains('/');
+        var tex = Svg.Get(full ? name : "ui/" + name, px);
+        if (tex == null) return false;
+        var tint = full ? Color.White * (c.A / 255f) : c;
+        DrawTex(tex, center, px, tint, rot, shadow);
+        return true;
+    }
+
+    /// <summary>Draw a texture centred, scaled so its longest side is <paramref name="px"/> pixels.</summary>
+    public void DrawTex(Texture2D tex, Vector2 center, float px, Color tint, float rot = 0f, bool shadow = false)
+    {
+        float k = px / Math.Max(tex.Width, tex.Height);
+        var origin = new Vector2(tex.Width, tex.Height) * 0.5f;
+        if (shadow) Sb.Draw(tex, center + new Vector2(1, 1), null, new Color(0, 0, 0, 150) * (tint.A / 255f), rot, origin, k, SpriteEffects.None, 0);
+        Sb.Draw(tex, center, null, tint, rot, origin, k, SpriteEffects.None, 0);
+    }
+
+    /// <summary>Draw an SVG asset stretched to a destination size (centre-based), optionally rotated.</summary>
+    public bool Sprite(string path, Vector2 center, float w, float h, Color tint, float rot = 0f, SpriteEffects fx = SpriteEffects.None)
+    {
+        var tex = Svg.Get(path, Math.Max(w, h));
+        if (tex == null) return false;
+        Sb.Draw(tex, center, null, tint, rot, new Vector2(tex.Width, tex.Height) * 0.5f, new Vector2(w / tex.Width, h / tex.Height), fx, 0);
+        return true;
     }
 
     public void Line(Vector2 a, Vector2 b, Color c, float thickness = 1f)

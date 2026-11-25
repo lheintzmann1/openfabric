@@ -93,11 +93,11 @@ public sealed class GameScreen : Screen
     public GameScreen(OpenFabricGame host, GameSession session) : base(host)
     {
         Session = session;
-        chunks = new ChunkRenderer(host.GraphicsDevice, session.Sim.Map);
+        chunks = new ChunkRenderer(host.GraphicsDevice, session.Sim.Map, host.Gfx.Svg);
         buildings = new BuildingRenderer(host.Gfx, cam);
         ctx = new UiContext { Ui = host.Ui, S = session, Cam = cam, Windows = windows };
         foreach (var w in WindowRegistry.CreateAll()) windows.Add(w);
-        session.SimChanged += () => { chunks = new ChunkRenderer(Host.GraphicsDevice, Session.Sim.Map); };
+        session.SimChanged += () => { chunks = new ChunkRenderer(Host.GraphicsDevice, Session.Sim.Map, Host.Gfx.Svg); };
         cam.Center = new Vector2(session.PredX, session.PredY);
         for (int cy = -2; cy <= 1; cy++) for (int cx = -2; cx <= 1; cx++) session.Sim.Map.GetChunk(cx, cy);
     }
@@ -409,13 +409,17 @@ public sealed class GameScreen : Screen
         var g = G; var sb = g.Sb; var ui = Ui;
         chunks.BeginFrame();
         sb.Begin(samplerState: SamplerState.PointClamp);
-        DrawTerrain();
+        DrawBakedTerrain();
+        sb.End();
+
+        sb.Begin(samplerState: SamplerState.LinearClamp);
+        DrawTileArt();
         buildings.Draw(Sim);
         DrawWorldOverlays();
         DrawPlayers();
         sb.End();
 
-        sb.Begin(samplerState: SamplerState.PointClamp);
+        sb.Begin(samplerState: SamplerState.LinearClamp);
         DrawHud();
         DrawPalette();
         windows.Draw(ctx);
@@ -424,7 +428,7 @@ public sealed class GameScreen : Screen
         sb.End();
     }
 
-    void DrawTerrain()
+    void DrawBakedTerrain()
     {
         var (x0, y0, x1, y1) = cam.VisibleTiles();
         int cx0 = WorldGen.FloorDiv(x0, Chunk.Size), cx1 = WorldGen.FloorDiv(x1, Chunk.Size);
@@ -441,42 +445,61 @@ public sealed class GameScreen : Screen
                 sb.Draw(chunks.Get(c), new Rectangle(sx, sy, (int)MathF.Floor(b.X) - sx, (int)MathF.Floor(b.Y) - sy), Color.White);
             }
         chunks.Trim();
-        if (cam.Zoom >= 18) DrawGridAndOre(x0, y0, x1, y1);
+    }
+
+    static readonly string[] TerrainNames = { "deep_water", "water", "sand", "grass", "forest", "rock", "cliff", "snow" };
+
+    /// <summary>Close-up: draw the per-terrain SVG tiles (with rotation/shade variation) and resource art over the baked map.</summary>
+    void DrawTileArt()
+    {
+        if (cam.Zoom < 14) return;
+        var (x0, y0, x1, y1) = cam.VisibleTiles();
+        float z = cam.Zoom; var g = G; var map = Sim.Map;
+        var tex = new Texture2D?[TerrainNames.Length];
+        for (int i = 0; i < tex.Length; i++) tex[i] = g.Svg.Get("terrain/" + TerrainNames[i], z);
+        for (int ty = y0; ty < y1; ty++)
+            for (int tx = x0; tx < x1; tx++)
+            {
+                int cx = WorldGen.FloorDiv(tx, Chunk.Size), cy = WorldGen.FloorDiv(ty, Chunk.Size);
+                if (!map.IsLoaded(cx, cy)) continue;
+                var t = map.TerrainAt(tx, ty);
+                var tt = tex[(int)t];
+                if (tt == null) continue;
+                var a = cam.WorldToScreen(new Vector2(tx, ty)); var b = cam.WorldToScreen(new Vector2(tx + 1, ty + 1));
+                int sx = (int)MathF.Floor(a.X), sy = (int)MathF.Floor(a.Y);
+                int w = (int)MathF.Floor(b.X) - sx, h = (int)MathF.Floor(b.Y) - sy;
+                uint hv = Noise.Hash(0xA11CEu, tx, ty);
+                float shade = 0.92f + 0.08f * ((hv & 0xFF) / 255f);
+                int quarter = (int)((hv >> 8) & 3);
+                // quarter turns keep the tile square; draw around the centre so the rect stays put
+                g.Sb.Draw(tt, new Vector2(sx + w / 2f, sy + h / 2f), null, new Color(shade, shade, shade, 1f), quarter * MathHelper.PiOver2,
+                    new Vector2(tt.Width / 2f, tt.Height / 2f), new Vector2((w + 0.5f) / tt.Width, (h + 0.5f) / tt.Height), SpriteEffects.None, 0);
+            }
+        DrawGridAndOre(x0, y0, x1, y1);
     }
 
     void DrawGridAndOre(int x0, int y0, int x1, int y1)
     {
-        var grid = new Color(0, 0, 0, 24);
+        var grid = new Color(0, 0, 0, 22);
         float z = cam.Zoom; var g = G;
         for (int ty = y0; ty < y1; ty++)
             for (int tx = x0; tx < x1; tx++)
             {
                 var s = cam.WorldToScreen(new Vector2(tx, ty));
-                g.Rect(s.X, s.Y, z, 1, grid);
-                g.Rect(s.X, s.Y, 1, z, grid);
-                if (z < 22) continue;
-                if (Sim.At(tx, ty) != null) continue;
+                if (z >= 20) { g.Rect(s.X, s.Y, z, 1, grid); g.Rect(s.X, s.Y, 1, z, grid); }
+                if (!Sim.Map.IsLoaded(WorldGen.FloorDiv(tx, Chunk.Size), WorldGen.FloorDiv(ty, Chunk.Size))) continue;
                 var (def, amt) = Sim.Map.ResourceAt(tx, ty);
-                if (def == null) continue;
-                var col = Gfx.Hex(def.Color);
-                if (def.Kind == ResourceKind.Fluid)
-                {
-                    g.Icon(def.Icon, s + new Vector2(z, z) * 0.5f, z * 0.8f, Color.Lerp(col, Color.White, 0.5f), shadow: true);
-                    if (z >= 40) g.Text($"{amt}%", s + new Vector2(2, z - 16), 11, Color.White);
-                    continue;
-                }
-                var dark = new Color((int)(col.R * 0.55f), (int)(col.G * 0.55f), (int)(col.B * 0.55f), 200);
-                var light = Color.Lerp(col, Color.White, 0.45f);
+                if (def == null || Sim.At(tx, ty) != null) continue;
+                var centre = s + new Vector2(z, z) * 0.5f;
                 uint h = Noise.Hash(0xBEEFu, tx, ty);
-                int dots = 2 + (int)Math.Min(3, amt / 250);
-                for (int d = 0; d < dots; d++)
+                float rich = def.Kind == ResourceKind.Fluid ? 1f : 0.62f + 0.38f * MathF.Min(1f, amt / 700f);
+                float rot = ((h & 3) * MathHelper.PiOver2);
+                if (!g.Sprite("resources/" + def.Item, centre, z * rich, z * rich, Color.White, def.Kind == ResourceKind.Fluid ? 0 : rot))
                 {
-                    uint hh = (h >> (d * 5)) ^ (uint)(d * 7919);
-                    float ox = ((hh & 0xFF) / 255f) * 0.7f + 0.05f, oy = (((hh >> 8) & 0xFF) / 255f) * 0.7f + 0.05f;
-                    float sz = z * (0.14f + 0.1f * (((hh >> 16) & 7) / 7f));
-                    g.Rect(s.X + ox * z + 1, s.Y + oy * z + 1, sz, sz, dark);
-                    g.Rect(s.X + ox * z, s.Y + oy * z, sz, sz, light);
+                    var col = Gfx.Hex(def.Color);
+                    g.Rect(s.X + z * 0.25f, s.Y + z * 0.25f, z * 0.5f, z * 0.5f, col);
                 }
+                if (def.Kind == ResourceKind.Fluid && z >= 40) g.Text($"{amt}%", s + new Vector2(2, z - 16), 11, Color.White);
             }
     }
 
@@ -540,14 +563,7 @@ public sealed class GameScreen : Screen
             if (hov != null)
             {
                 buildings.Highlight(hov, new Color(255, 255, 255, 140));
-                var st = BuildingInfo.State(Sim, hov);
-                var tipLines = new List<string> { hov.Def.Name };
-                var stText = BuildingInfo.Text(st);
-                if (stText != "") tipLines.Add(stText);
-                if (hov.Recipe != null && Data.Recipes.TryGetValue(hov.Recipe, out var hr)) tipLines.Add("Recipe: " + hr.Name);
-                if (hov.Kind == "drill" && hov.MineItem != null) tipLines.Add("Mining " + Data.Items[hov.MineItem].Name);
-                if (hov.PNet != null && hov.Def.PowerKw > 0) tipLines.Add($"Power {hov.PNet.Satisfaction * 100:0}%");
-                ui.Tip(string.Join("\n", tipLines));
+
             }
             else
             {
@@ -643,8 +659,118 @@ public sealed class GameScreen : Screen
 
         if (showMinimap) DrawMinimap(new Rectangle(W - 10 - 180, 58, 180, 180));
         DrawMultiplayerHud();
+        DrawInspector();
         DrawLog();
         DrawQueueStatus();
+    }
+
+    // ===== hover inspector (Waila / The One Probe style) ================================================
+
+    void DrawInspector()
+    {
+        var ui = Ui;
+        if (ui.WasOverUi || ui.TextFocused || paused || pasting != null || ctx.HeldBuild != null) return;
+        var (tx, ty) = MouseTile();
+        if (!Sim.Map.IsLoaded(WorldGen.FloorDiv(tx, 32), WorldGen.FloorDiv(ty, 32))) return;
+
+        // (icon, title, accent, lines) where each line is (text, colour)
+        string? icon = null; string title; Color accent = Theme.Border; Color iconTint = Color.White;
+        var lines = new List<(string text, Color col)>();
+        var b = Sim.At(tx, ty);
+        if (b != null)
+        {
+            var d = b.Def;
+            icon = d.Icon; title = d.Name; accent = Gfx.Hex(d.Color);
+            var st = BuildingInfo.State(Sim, b);
+            var stText = BuildingInfo.Text(st);
+            if (stText != "") lines.Add((stText, BuildingInfo.Color(st).A > 0 ? BuildingInfo.Color(st) : Theme.TextDim));
+            if (b.Recipe != null && Data.Recipes.TryGetValue(b.Recipe, out var r))
+            {
+                string Fmt(IEnumerable<Stack> xs) => string.Join(" + ", xs.Select(x => $"{Ui.Format(x.Amount)} {Data.Items[x.Item].Name}"));
+                lines.Add(($"{Fmt(r.Outputs)}  ←  {Fmt(r.Inputs)}", Theme.Text));
+                double perMin = 60.0 / r.Time * d.Speed * (1 + Sim.Team.Mod("craftSpeed")) * r.Outputs[0].Amount;
+                lines.Add(($"{r.Time / d.Speed:0.#} s per cycle · {perMin:0.#}/min" + (b.Crafting ? $" · {Math.Clamp(b.Progress / r.Time, 0, 1) * 100:0}%" : ""), Theme.TextDim));
+            }
+            string Inv(Inventory inv) => string.Join(", ", inv.Items.Where(kv => kv.Value >= 0.5).Take(4).Select(kv => $"{Ui.Format(Math.Floor(kv.Value))} {Data.Items[kv.Key].Name}"));
+            if (Sim.IsCrafterKind(b.Kind) || b.Kind is "drill" or "lab" or "link_port")
+            {
+                var i = Inv(b.In); if (i != "") lines.Add(("In: " + i, Theme.TextDim));
+                var o = Inv(b.Out); if (o != "") lines.Add(("Out: " + o, Theme.TextDim));
+            }
+            if (b.Fuel.Total >= 1 || d.Prop("fuelKw") > 0 || b.Kind is "generator_fuel" or "generator_reactor")
+                lines.Add(($"Fuel: {(b.Fuel.Total >= 1 ? Inv(b.Fuel) : "none")}" + (b.FuelLeftMJ > 0 ? $" (+{b.FuelLeftMJ:0.#} MJ burning)" : ""), b.Fuel.Total >= 1 || b.FuelLeftMJ > 0 ? Theme.TextDim : Theme.Bad));
+            switch (b.Kind)
+            {
+                case "drill":
+                    if (b.MineItem != null)
+                    {
+                        double rate = d.Prop("rate") * b.MineEff * (1 + Sim.Team.Mod("drillSpeed"));
+                        double left = 0; foreach (var (mx, my) in b.MineTiles) left += Sim.Map.ResourceAt(mx, my).amount;
+                        lines.Add(($"Mining {Data.Items[b.MineItem].Name}: {rate:0.##}/s" + (b.MineFluid ? "" : $" · {Ui.Format(left)} left"), Theme.Text));
+                    }
+                    else lines.Add(("No resource under this drill", Theme.Bad));
+                    break;
+                case "belt": case "splitter": case "merger":
+                    lines.Add(($"{(d.Prop("speed", 1.875) * 4):0.#} items/s" + (b.BeltCount > 0 ? $" · carrying {string.Join(", ", b.Belt.Take(b.BeltCount).GroupBy(x => x.Item).Select(g => $"{g.Count()}× {Data.Items[g.Key].Name}"))}" : ""), Theme.TextDim));
+                    break;
+                case "chest": case "hub":
+                    lines.Add(($"{b.In.SlotsUsed(Data)} / {b.In.MaxSlots} slots" + (Inv(b.In) != "" ? " · " + Inv(b.In) : ""), Theme.TextDim));
+                    break;
+                case "pipe": case "tank":
+                    if (b.FNet is { } fn) lines.Add((fn.Type != null ? $"{Data.Items[fn.Type].Name}: {fn.Amount:0}/{fn.Capacity:0}" : $"Empty (capacity {fn.Capacity:0})", Theme.Text));
+                    break;
+                case "battery":
+                    lines.Add(($"Charge {b.Charge:0}/{d.Prop("capacityMJ", 1000):0} MJ", Theme.Text));
+                    break;
+                case "lab":
+                    if (Sim.Team.CurrentResearch is { } cr) lines.Add(($"Researching {Data.Research[cr].Name} {Sim.Team.ResearchProgress / Data.Research[cr].Time * 100:0}%", Theme.Text));
+                    break;
+                case "link_port":
+                    lines.Add((b.Channel == 0 ? "No channel set" : $"Channel {b.Channel}", b.Channel == 0 ? Theme.Warn : Theme.Text));
+                    break;
+                case "pump":
+                    lines.Add(($"{d.Prop("rate", 20) * b.MineEff:0.#} {Data.Items[d.Fluid == "" ? "water" : d.Fluid].Name}/s", Theme.TextDim));
+                    break;
+            }
+            if (d.Prop("outputKw") > 0) lines.Add(($"Output {d.Prop("outputKw"):0} kW" + (b.PNet != null ? $" · load {b.PNet.Load * 100:0}%" : " · not connected"), b.PNet != null ? Theme.Text : Theme.Bad));
+            if (d.PowerKw > 0) lines.Add(($"Uses {d.PowerKw:0} kW" + (b.PNet != null ? $" · supply {b.PNet.Satisfaction * 100:0}%" : " · no power connection"), b.PNet != null && b.PNet.Satisfaction > 0.99 ? Theme.TextDim : Theme.Warn));
+            if (b.Kind == "pole" && b.PNet != null) lines.Add(($"Grid {b.PNet.DemandKw / 1000:0.0}/{b.PNet.CapacityKw / 1000:0.0} MW · {b.PNet.Members.Count} connected", Theme.TextDim));
+            lines.Add(("Click for details · R rotate · Q copy · RMB demolish", new Color(120, 130, 150)));
+        }
+        else
+        {
+            var (rd, amt) = Sim.Map.ResourceAt(tx, ty);
+            var t = Sim.Map.TerrainAt(tx, ty);
+            if (rd != null)
+            {
+                icon = rd.Icon; title = rd.Name; accent = Gfx.Hex(rd.Color); iconTint = Color.Lerp(accent, Color.White, 0.35f);
+                lines.Add((rd.Kind == ResourceKind.Fluid ? $"Well yield {amt}%" : $"{Ui.Format(amt)} remaining", Theme.Text));
+                lines.Add((rd.Kind == ResourceKind.Fluid ? "Build a pumpjack here" : "Hold LMB to mine · build a drill over it", new Color(120, 130, 150)));
+            }
+            else
+            {
+                title = t switch { Terrain.DeepWater => "Deep water", Terrain.Water => "Shallow water", Terrain.Cliff => "Cliff", _ => t.ToString() };
+                lines.Add((TerrainInfo.Buildable(t) ? "Buildable" : t == Terrain.Water ? "Pumps can be built here" : "Can't build here", Theme.TextDim));
+            }
+        }
+        lines.Add(($"{tx}, {ty}", new Color(90, 100, 120)));
+
+        float w = Math.Max(G.Measure(title, 17).X + 70, 220);
+        foreach (var (text, _) in lines) w = Math.Max(w, G.Measure(text, 13).X + 24);
+        w = Math.Min(w, Math.Max(240, Ui.Screen.X - 760));
+        int h = 36 + lines.Count * 17 + 8;
+        var r0 = new Rectangle((int)(Ui.Screen.X / 2 - w / 2), 56, (int)w, h);
+        Ui.Panel(r0, null, new Color(14, 18, 26, 235));
+        G.Rect(new Rectangle(r0.X, r0.Y, 4, r0.Height), accent);
+        if (icon != null) G.Icon(icon, new Vector2(r0.X + 28, r0.Y + 24), 30, iconTint, shadow: true);
+        G.Text(title, new Vector2(r0.X + 52, r0.Y + 7), 17, Theme.Text);
+        int yy = r0.Y + 36;
+        foreach (var (text, col) in lines)
+        {
+            var shown = text; while (shown.Length > 8 && G.Measure(shown, 13).X > w - 20) shown = shown[..^2];
+            if (shown != text) shown += "…";
+            G.Text(shown, new Vector2(r0.X + 14, yy), 13, col); yy += 17;
+        }
     }
 
     string? Hint()

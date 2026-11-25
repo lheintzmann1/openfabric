@@ -20,7 +20,7 @@ public sealed class MainMenuScreen : Screen
     public MainMenuScreen(OpenFabricGame host) : base(host)
     {
         bg = new WorldMap(Environment.TickCount, host.Data);
-        chunks = new ChunkRenderer(host.GraphicsDevice, bg);
+        chunks = new ChunkRenderer(host.GraphicsDevice, bg, host.Gfx.Svg);
         cam.Center = new Vector2(0, 0);
         seedText = new Random().Next(1000, 999999).ToString();
     }

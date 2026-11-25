@@ -63,6 +63,11 @@ public sealed class OpenFabricGame : Microsoft.Xna.Framework.Game
         var errs = Data.Validate();
         if (errs.Count > 0) throw new InvalidDataException("Game data invalid:\n" + string.Join("\n", errs.Take(30)));
         Gfx = new Gfx(GraphicsDevice, Path.Combine(dir, "Assets"));
+        // every item/building/research/resource icon is an SVG named after its id (Assets/items/<id>.svg, ...)
+        foreach (var it in Data.Items.Values) it.Icon = "items/" + it.Id;
+        foreach (var b in Data.Buildings.Values) b.Icon = "buildings/" + b.Id;
+        foreach (var r in Data.Research.Values) r.Icon = "research/" + r.Id;
+        foreach (var r in Data.Resources) r.Icon = "resources/" + r.Item;
         Ui = new Ui(Gfx, Data);
         Window.TextInput += (_, e) => Ui.FeedChar(e.Character);
 
@@ -89,6 +94,7 @@ public sealed class OpenFabricGame : Microsoft.Xna.Framework.Game
         if (Quit) { Exit(); return; }
         Ui.Begin(new Point(GraphicsDevice.Viewport.Width, GraphicsDevice.Viewport.Height));
         if (Ui.KeyPressed(Microsoft.Xna.Framework.Input.Keys.F11)) gdm.ToggleFullScreen();
+        if (Ui.KeyPressed(Microsoft.Xna.Framework.Input.Keys.F9)) Gfx.Svg.Reload(); // pick up edited SVG files
         current?.Update(gt, (float)gt.ElapsedGameTime.TotalSeconds);
         Ui.EndFrameInput();
         base.Update(gt);
@@ -98,7 +104,7 @@ public sealed class OpenFabricGame : Microsoft.Xna.Framework.Game
     {
         GraphicsDevice.Clear(Gfx.Hex("#0e1116"));
         current?.Draw(gt);
-        Gfx.Sb.Begin(samplerState: SamplerState.PointClamp);
+        Gfx.Sb.Begin(samplerState: SamplerState.LinearClamp);
         Ui.DrawTooltip();
         Gfx.Sb.End();
         base.Draw(gt);

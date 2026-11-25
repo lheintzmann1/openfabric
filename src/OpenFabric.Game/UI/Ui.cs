@@ -175,7 +175,7 @@ public sealed class Ui
     {
         clip = r;
         G.Sb.End();
-        G.Sb.Begin(samplerState: SamplerState.PointClamp, rasterizerState: ClipState);
+        G.Sb.Begin(samplerState: SamplerState.LinearClamp, rasterizerState: ClipState);
         var vp = G.Sb.GraphicsDevice.Viewport.Bounds;
         G.Sb.GraphicsDevice.ScissorRectangle = Rectangle.Intersect(r, vp);
     }
@@ -184,7 +184,7 @@ public sealed class Ui
     {
         clip = null;
         G.Sb.End();
-        G.Sb.Begin(samplerState: SamplerState.PointClamp);
+        G.Sb.Begin(samplerState: SamplerState.LinearClamp);
     }
 
     static readonly RasterizerState ClipState = new() { ScissorTestEnable = true, CullMode = CullMode.None };
