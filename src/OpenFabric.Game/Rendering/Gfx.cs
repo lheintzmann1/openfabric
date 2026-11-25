@@ -65,6 +65,34 @@ public sealed class Gfx
         Sb.DrawString(f, g, pos, c);
     }
 
+    /// <summary>Icon rotated clockwise by <paramref name="rot"/> radians around its centre.</summary>
+    public void IconRot(string name, Vector2 center, float px, Color c, float rot)
+    {
+        if (!codepoints.TryGetValue(name, out var g)) g = codepoints["help_outline"];
+        var f = icons.GetFont(Math.Max(8, (int)MathF.Round(px)));
+        var size = f.MeasureString(g);
+        Sb.DrawString(f, g, center, c, rot, size * 0.5f);
+    }
+
+    public void Line(Vector2 a, Vector2 b, Color c, float thickness = 1f)
+    {
+        var d = b - a;
+        float len = d.Length();
+        if (len < 0.5f) return;
+        Sb.Draw(Pixel, a, null, c, MathF.Atan2(d.Y, d.X), new Vector2(0, 0.5f), new Vector2(len, thickness), SpriteEffects.None, 0);
+    }
+
+    public void Circle(Vector2 center, float radius, Color c, float thickness = 1f, int segs = 40)
+    {
+        var prev = center + new Vector2(radius, 0);
+        for (int i = 1; i <= segs; i++)
+        {
+            float a = i * MathF.Tau / segs;
+            var p = center + new Vector2(MathF.Cos(a), MathF.Sin(a)) * radius;
+            Line(prev, p, c, thickness); prev = p;
+        }
+    }
+
     public static Color Hex(string s, float alpha = 1f)
     {
         s = s.TrimStart('#');

@@ -8,6 +8,8 @@ public sealed partial class Simulation
     readonly List<FluidNet> fluidNets = new();
     public IReadOnlyList<PowerNet> PowerNets => powerNets;
     public IReadOnlyList<FluidNet> FluidNets => fluidNets;
+    /// <summary>Pole-to-pole links (for drawing the grid).</summary>
+    public readonly List<(Building a, Building b)> PoleLinks = new();
 
     static bool NeedsPower(Building b)
         => b.Def.PowerKw > 0 || b.Kind is "battery" or "generator_fuel" or "generator_fluid" or "generator_passive" or "generator_reactor";
@@ -18,6 +20,7 @@ public sealed partial class Simulation
     {
         powerDirty = false;
         powerNets.Clear();
+        PoleLinks.Clear();
         foreach (var b in Buildings) b.PNet = null;
         var poles = Buildings.Where(b => b.Kind == "pole").ToList();
         if (poles.Count == 0) return;
@@ -48,7 +51,7 @@ public sealed partial class Simulation
                             if (o <= i) continue;
                             double link = Math.Min(poles[i].Def.Prop("link", 7), poles[o].Def.Prop("link", 7));
                             double dx = poles[i].X - poles[o].X, dy = poles[i].Y - poles[o].Y;
-                            if (dx * dx + dy * dy <= link * link) parent[Find(i)] = Find(o);
+                            if (dx * dx + dy * dy <= link * link) { parent[Find(i)] = Find(o); PoleLinks.Add((poles[i], poles[o])); }
                         }
         }
         var netOf = new Dictionary<int, PowerNet>();
