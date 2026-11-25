@@ -122,6 +122,50 @@ public class SimTests
     }
 
     [Fact]
+    public void FuelBuffersAcceptUpToOneHundredItems()
+    {
+        var sim = TestData.NewSim();
+        var (x, y) = TestData.FindFlat(sim, 10, 4);
+        Ok(sim.Place(null, "coal_gen", x, y, 0));
+        Ok(sim.Place(null, "reactor", x + 3, y, 0));
+        Ok(sim.Place(null, "furnace", x + 6, y, 0));
+
+        foreach (var b in new[] { sim.At(x, y)!, sim.At(x + 3, y)!, sim.At(x + 6, y)! })
+        {
+            for (int i = 0; i < 100; i++)
+                Assert.True(sim.TryGive(b, "coal", 0), $"Could not insert fuel item {i + 1} into {b.Kind}");
+            Assert.False(sim.TryGive(b, "coal", 0));
+        }
+    }
+
+    [Fact]
+    public void LabAndLinkPortBuffersHoldUpToOneHundredItems()
+    {
+        var sim = TestData.NewSim();
+        var (x, y) = TestData.FindFlat(sim, 8, 4);
+        Ok(sim.QueueResearch("r1"));
+        Ok(sim.Place(null, "lab", x, y, 0));
+        Ok(sim.Place(null, "link_port", x + 3, y, 0));
+        Ok(sim.Place(null, "link_port", x + 6, y, 0));
+
+        var lab = sim.At(x, y)!;
+        for (int i = 0; i < 100; i++)
+            Assert.True(sim.TryGive(lab, "pack", 0), $"Could not insert research pack {i + 1}");
+        Assert.False(sim.TryGive(lab, "pack", 0));
+
+        var source = sim.At(x + 3, y)!;
+        var target = sim.At(x + 6, y)!;
+        source.Channel = target.Channel = 1;
+        for (int i = 0; i < 100; i++)
+            Assert.True(sim.TryGive(source, "stone", 0), $"Could not insert link-port item {i + 1}");
+        Assert.False(sim.TryGive(source, "stone", 0));
+
+        TestData.Run(sim, 51);
+
+        Assert.Equal(100, target.Out.Get("stone"));
+    }
+
+    [Fact]
     public void ElectricMachineNeedsPower_AndBrownoutSlowsIt()
     {
         var sim = TestData.NewSim();

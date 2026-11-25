@@ -64,7 +64,7 @@ public sealed partial class Simulation
             }
             foreach (var o in r.Outputs)
             {
-                double cap = Data.Items[o.Item].Fluid ? o.Amount * 2 : Math.Max(o.Amount, SolidItemBufferCapacity);
+                double cap = Data.Items[o.Item].Fluid ? o.Amount * 2 : Math.Max(o.Amount, ItemBufferCapacity);
                 if (b.Out.Get(o.Item) + o.Amount > cap + 1e-9) return;
             }
             foreach (var inp in r.Inputs) { b.In.Take(inp.Item, inp.Amount); Stats.Consumed(inp.Item, inp.Amount); }
@@ -122,7 +122,7 @@ public sealed partial class Simulation
         b.Active = false;
         if (b.NeedsScan) ScanDrill(b);
         if (b.MineItem == null) return;
-        double cap = b.MineFluid ? Math.Max(2, b.Def.Prop("rate")) * 2 : SolidItemBufferCapacity;
+        double cap = b.MineFluid ? Math.Max(2, b.Def.Prop("rate")) * 2 : ItemBufferCapacity;
         if (b.Out.Get(b.MineItem) >= cap) return;
 
         double f = 1;
@@ -180,7 +180,7 @@ public sealed partial class Simulation
     {
         var rid = Team.CurrentResearch;
         if (rid == null || !Data.Research.TryGetValue(rid, out var r)) return false;
-        if (r.Cost.All(c => c.Item != item) || t.In.Get(item) >= 10) return false;
+        if (r.Cost.All(c => c.Item != item) || t.In.Get(item) >= ItemBufferCapacity) return false;
         t.In.Add(item, 1);
         return true;
     }
@@ -242,7 +242,7 @@ public sealed partial class Simulation
                 {
                     bool coolant = d.Fluid == "" || g.In.Has(d.Fluid, d.Prop("fluidPerSec") * Dt);
                     bool fuel = g.FuelLeftMJ > 1e-9 || g.Fuel.Total >= 1;
-                    bool wasteRoom = d.Waste == "" || g.Out.Get(d.Waste) < 4;
+                    bool wasteRoom = d.Waste == "" || g.Out.Get(d.Waste) < ItemBufferCapacity;
                     return coolant && fuel && wasteRoom ? kw * g.Clock : 0;
                 }
         }
@@ -315,7 +315,7 @@ public sealed partial class Simulation
             for (int k = 0; k < peers.Count; k++)
             {
                 var p = peers[(b.Rr + k) % peers.Count];
-                if (p == b || p.Out.Total >= 8) continue;
+                if (p == b || p.Out.Total >= ItemBufferCapacity) continue;
                 double range = Math.Min(b.Def.Prop("range", 100), p.Def.Prop("range", 100));
                 double dx = p.X - b.X, dy = p.Y - b.Y;
                 if (dx * dx + dy * dy > range * range) continue;

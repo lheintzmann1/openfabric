@@ -48,6 +48,8 @@ internal static class TestData
         B("boiler", "boiler", 2, 2, props: new() { ["fuelKw"] = 1800 });
         B("steam_engine", "generator_fluid", 2, 2, props: new() { ["outputKw"] = 900, ["fluidPerSec"] = 30 }, fluid: "steam");
         B("lab", "lab", 2, 2, kw: 60);
+        B("reactor", "generator_reactor", 2, 2, props: new() { ["outputKw"] = 100 });
+        B("link_port", "link_port");
         B("sink", "sink");
 
         void R(string id, string machine, Stack[] i, Stack[] o, double t, bool hand = false) =>

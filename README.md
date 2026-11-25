@@ -63,7 +63,7 @@ each player has an own inventory and crafting queue.
 Tagged releases (`v*`) are built by GitHub Actions for **Linux (x64), Windows (x64) and macOS (Apple Silicon + Intel)** as
 self-contained archives — unzip and run `OpenFabric` / `OpenFabric.exe`. The macOS builds are unsigned: right-click → Open the
 first time (or `xattr -dr com.apple.quarantine OpenFabric-osx-*`). Every push and pull request builds and tests on all three
-platforms (`.github/workflows/ci.yml`). To cut a release: `git tag v0.1.0 && git push origin v0.1.0`.
+platforms (`.github/workflows/ci.yml`). To cut a release: `git tag v0.2.0 && git push origin v0.2.0`.
 
 ## License
 MIT — see [LICENSE](LICENSE). Bundled fonts/icons and dependencies are listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

@@ -15,7 +15,7 @@ public readonly record struct Result(bool Ok, string Message = "")
 /// </summary>
 public sealed partial class Simulation
 {
-    const int SolidItemBufferCapacity = 100;
+    const int ItemBufferCapacity = 100;
 
     public const int TickRate = 30;
     public const double Dt = 1.0 / TickRate;
@@ -411,7 +411,7 @@ public sealed partial class Simulation
             case "lab":
                 return LabAccept(t, item);
             case "link_port":
-                if (t.Channel == 0 || t.In.Total >= 8) return false;
+                if (t.Channel == 0 || t.In.Total >= ItemBufferCapacity) return false;
                 t.In.Add(item, 1); return true;
             case "drill":
                 return FuelAccept(t, item);
@@ -427,7 +427,7 @@ public sealed partial class Simulation
     {
         bool burner = t.Def.Prop("fuelKw") > 0 || t.Kind is "generator_fuel" or "generator_reactor";
         if (!burner || !IsFuel(item, t.Def)) return false;
-        double cap = t.Kind == "generator_reactor" ? 2 : 5;
+        double cap = ItemBufferCapacity;
         if (t.Fuel.Get(item) >= cap) return false;
         t.Fuel.Add(item, 1);
         return true;
@@ -448,7 +448,7 @@ public sealed partial class Simulation
         if (r == null && t.Def.Prop("autoRecipe") > 0 && !t.Crafting && t.Out.IsEmpty)
         {
             // fuel gets priority while the buffer is low
-            if (burner && IsFuel(item, t.Def) && t.Fuel.Total < 2) { t.Fuel.Add(item, 1); return true; }
+            if (burner && IsFuel(item, t.Def) && t.Fuel.Total < ItemBufferCapacity) { t.Fuel.Add(item, 1); return true; }
             foreach (var cand in RecipesForKind(t.Kind))
             {
                 if (!Team.IsUnlocked(cand.Id) || cand.Inputs.All(i => i.Item != item)) continue;
@@ -458,18 +458,18 @@ public sealed partial class Simulation
         }
         if (r != null)
         {
-            bool fuelWanted = burner && IsFuel(item, t.Def) && t.Fuel.Get(item) < 5 && r.Inputs.All(i => i.Item != item);
+            bool fuelWanted = burner && IsFuel(item, t.Def) && t.Fuel.Get(item) < ItemBufferCapacity && r.Inputs.All(i => i.Item != item);
             if (fuelWanted) { t.Fuel.Add(item, 1); return true; }
             foreach (var inp in r.Inputs)
                 if (inp.Item == item && !Data.Items[item].Fluid)
                 {
-                    double cap = Math.Max(inp.Amount, SolidItemBufferCapacity);
+                    double cap = Math.Max(inp.Amount, ItemBufferCapacity);
                     if (t.In.Get(item) >= cap) return false;
                     t.In.Add(item, 1);
                     return true;
                 }
         }
-        if (burner && IsFuel(item, t.Def) && t.Fuel.Get(item) < 5) { t.Fuel.Add(item, 1); return true; }
+        if (burner && IsFuel(item, t.Def) && t.Fuel.Get(item) < ItemBufferCapacity) { t.Fuel.Add(item, 1); return true; }
         return false;
     }
 
