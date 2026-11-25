@@ -94,7 +94,7 @@ public sealed partial class Simulation
 
     static bool IsBeltFamily(string kind) => kind is "belt" or "splitter" or "merger";
 
-    public Result CanPlace(string defId, int x, int y, int rot, out Building? replaced)
+    public Result CanPlace(string defId, int x, int y, int rot, out Building? replaced, byte bend = 0)
     {
         replaced = null;
         if (!Data.Buildings.TryGetValue(defId, out var def)) return Result.Fail("Unknown building");
@@ -124,7 +124,7 @@ public sealed partial class Simulation
                 if (ex != null)
                 {
                     bool swap = w == 1 && h == 1 && ex.W == 1 && ex.H == 1 && IsBeltFamily(def.Kind) && IsBeltFamily(ex.Kind)
-                                && ex.Kind == def.Kind && (ex.Def.Id != def.Id || ex.Rot != rot);
+                                && ex.Kind == def.Kind && (ex.Def.Id != def.Id || ex.Rot != rot || (def.Kind == "belt" && ex.BeltBend != bend));
                     if (!swap) return Result.Fail("Tile occupied");
                     replaced = ex;
                 }
@@ -146,10 +146,11 @@ public sealed partial class Simulation
         return Result.Success;
     }
 
-    public Result Place(Player? p, string defId, int x, int y, int rot, bool free = false)
+    public Result Place(Player? p, string defId, int x, int y, int rot, bool free = false, byte bend = 0)
     {
         rot = Dir.Norm(rot);
-        var check = CanPlace(defId, x, y, rot, out var replaced);
+        bend = bend > 3 ? (byte)0 : bend;
+        var check = CanPlace(defId, x, y, rot, out var replaced, bend);
         if (!check.Ok) return check;
         var def = Data.Buildings[defId];
         if (p != null && !free && def.Kind != "hub")
@@ -168,12 +169,14 @@ public sealed partial class Simulation
                 replaced.Def = def;
             }
             replaced.Rot = rot;
+            if (def.Kind == "belt") replaced.BeltBend = bend;
             TopoVersion++;
             return Result.Success;
         }
 
         if (p != null && !free && def.Kind != "hub") foreach (var s in def.Cost) p.Inv.Take(s.Item, s.Amount);
         var b = CreateBuilding(def, x, y, rot);
+        if (def.Kind == "belt") b.BeltBend = bend;
         AfterPlaced(b);
         return Result.Success;
     }
@@ -232,9 +235,65 @@ public sealed partial class Simulation
     {
         var b = At(x, y);
         if (b == null) return Result.Fail("Nothing here");
-        if (b.W != b.H) return Result.Fail("Can't rotate");
-        b.Rot = Dir.Norm(b.Rot + 1);
+        int newRot = Dir.Norm(b.Rot + 1);
+        var (nw, nh) = Building.Footprint(b.Def, newRot);
+        if (nw != b.W || nh != b.H)
+        {
+            int waterTiles = 0;
+            for (int j = 0; j < nh; j++)
+                for (int i = 0; i < nw; i++)
+                {
+                    int tx = b.X + i, ty = b.Y + j;
+                    var t = Map.TerrainAt(tx, ty);
+                    bool pumpOk = b.Kind == "pump" && t == Terrain.Water;
+                    if (!pumpOk && !TerrainInfo.Buildable(t)) return Result.Fail("Can't rotate here");
+                    if (b.Kind == "pump" && t == Terrain.Water) waterTiles++;
+                    var ex = At(tx, ty);
+                    if (ex != null && ex != b) return Result.Fail("Can't rotate: blocked");
+                }
+            if (b.Kind == "pump" && waterTiles == 0) return Result.Fail("Can't rotate here");
+            foreach (var (tx, ty) in b.Tiles()) occ.Remove(Key(tx, ty));
+            b.Rot = newRot; b.W = nw; b.H = nh;
+            foreach (var (tx, ty) in b.Tiles()) occ[Key(tx, ty)] = b;
+            powerDirty = true; fluidDirty = true; drillRescan = true;
+        }
+        else
+        {
+            b.Rot = newRot;
+        }
+        if (b.Kind == "underground")
+        {
+            if (b.Link != 0 && ById.TryGetValue(b.Link, out var other))
+            {
+                other.Link = 0; other.IsExit = false;
+            }
+            b.Link = 0; b.IsExit = false;
+            LinkUnderground(b);
+        }
         TopoVersion++;
+        return Result.Success;
+    }
+
+    public Result SetBeltBend(int x, int y, byte bend)
+    {
+        var b = At(x, y);
+        if (b == null || b.Kind != "belt") return Result.Fail("Not a belt");
+        if (bend > 3) return Result.Fail("Invalid belt angle");
+        b.BeltBend = bend;
+        TopoVersion++;
+        return Result.Success;
+    }
+
+    public Result SetSplitter(Player p, int buildingId, byte inPrio, byte outPrio, string filter)
+    {
+        if (!ById.TryGetValue(buildingId, out var b) || b.Kind != "dual_splitter") return Result.Fail("Not a splitter");
+        float rx = b.Center.x - p.X, ry = b.Center.y - p.Y;
+        if (rx * rx + ry * ry > (Player.Reach + 6) * (Player.Reach + 6)) return Result.Fail("Too far");
+        if (inPrio > 2 || outPrio > 2) return Result.Fail("Invalid priority");
+        if (filter != "" && (!Data.Items.TryGetValue(filter, out var it) || it.Fluid)) return Result.Fail("Invalid filter item");
+        b.SplitterInPriority = inPrio;
+        b.SplitterOutPriority = outPrio;
+        b.SplitterFilter = filter == "" ? null : filter;
         return Result.Success;
     }
 
@@ -242,15 +301,49 @@ public sealed partial class Simulation
     {
         int range = (int)b.Def.Prop("range", 4);
         int d = b.Rot;
+        // 1. Check backwards for an unlinked entrance facing the same direction
         for (int k = 1; k <= range + 1; k++)
         {
             var u = At(b.X - Dir.DX[d] * k, b.Y - Dir.DY[d] * k);
-            if (u != null && u.Kind == "underground" && u.Rot == d && !u.IsExit && u.Link == 0)
+            if (u != null && u.Kind == "underground" && u.Rot == d && !u.IsExit && u.Link == 0
+                && k <= (int)u.Def.Prop("range", 4) + 1)
             {
                 b.IsExit = true; b.Link = u.Id; u.Link = b.Id;
                 return;
             }
         }
+        // 2. Check forwards for an unlinked underground ahead facing the same direction (built exit-first)
+        for (int k = 1; k <= range + 1; k++)
+        {
+            var u = At(b.X + Dir.DX[d] * k, b.Y + Dir.DY[d] * k);
+            if (u != null && u.Kind == "underground" && u.Rot == d && !u.IsExit && u.Link == 0)
+            {
+                u.IsExit = true; u.Link = b.Id; b.Link = u.Id;
+                return;
+            }
+        }
+    }
+
+    /// <summary>Find an unlinked underground that would pair with an underground placed at (x, y, rot).</summary>
+    public Building? FindUndergroundPairPreview(BuildingDef def, int x, int y, int rot)
+    {
+        if (def.Kind != "underground") return null;
+        int range = (int)def.Prop("range", 4);
+        int d = Dir.Norm(rot);
+        for (int k = 1; k <= range + 1; k++)
+        {
+            var u = At(x - Dir.DX[d] * k, y - Dir.DY[d] * k);
+            if (u != null && u.Kind == "underground" && u.Rot == d && !u.IsExit && u.Link == 0
+                && k <= (int)u.Def.Prop("range", 4) + 1)
+                return u;
+        }
+        for (int k = 1; k <= range + 1; k++)
+        {
+            var u = At(x + Dir.DX[d] * k, y + Dir.DY[d] * k);
+            if (u != null && u.Kind == "underground" && u.Rot == d && !u.IsExit && u.Link == 0)
+                return u;
+        }
+        return null;
     }
 
     // ===== neighbour cache ===========================================================================
@@ -283,17 +376,23 @@ public sealed partial class Simulation
         return def.Accepts.Count == 0 || def.Accepts.Contains(item);
     }
 
+    /// <summary>Try to hand one item to whatever building occupies (<paramref name="tx"/>, <paramref name="ty"/>).</summary>
+    public bool TryGiveAt(int tx, int ty, string item, int dirTo)
+        => At(tx, ty) is { } t && TryGive(t, item, dirTo, tx, ty);
+
     /// <summary>Try to hand one item to <paramref name="t"/>, travelling in direction <paramref name="dirTo"/>.</summary>
-    public bool TryGive(Building t, string item, int dirTo)
+    public bool TryGive(Building t, string item, int dirTo, int tx = int.MinValue, int ty = int.MinValue)
     {
         switch (t.Kind)
         {
             case "belt":
                 if (dirTo == Dir.Opp(t.Rot)) return false;
-                return TryInsertBelt(t, item, dirTo == t.Rot ? 0f : 0.5f);
+                return TryInsertBelt(t, item, BeltEntryPos(t, dirTo));
             case "splitter":
                 if (dirTo != t.Rot || t.BeltCount > 0) return false;
                 t.Belt[0] = new BeltItem { Item = item, Pos = 0 }; t.BeltCount = 1; return true;
+            case "dual_splitter":
+                return TryAcceptDualSplitter(t, item, dirTo, tx, ty);
             case "merger":
                 if (dirTo == Dir.Opp(t.Rot) || t.BeltCount > 0) return false;
                 t.Belt[0] = new BeltItem { Item = item, Pos = 0 }; t.BeltCount = 1; return true;
@@ -399,6 +498,7 @@ public sealed partial class Simulation
             {
                 case "belt": UpdateBelt(b); break;
                 case "splitter": case "merger": UpdateJunction(b); break;
+                case "dual_splitter": UpdateDualSplitter(b); break;
                 case "underground": UpdateUnderground(b); break;
                 case "loader": UpdateLoader(b); break;
                 case "drill": UpdateDrill(b); PushOutputs(b); break;
