@@ -7,6 +7,7 @@ public static class WindowRegistry
 {
     public static IEnumerable<Window> CreateAll()
     {
-        yield break;
+        yield return new InventoryWindow();
+        yield return new TechWindow();
     }
 }

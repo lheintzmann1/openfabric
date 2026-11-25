@@ -232,6 +232,14 @@ public sealed partial class Simulation
         return Result.Success;
     }
 
+    /// <summary>Set a recipe on a freshly placed crafter (no refund logic: the building is empty).</summary>
+    public void PresetRecipe(int x, int y, string recipeId)
+    {
+        var b = At(x, y);
+        if (b == null || !crafterKinds.Contains(b.Kind)) return;
+        if (Data.Recipes.TryGetValue(recipeId, out var r) && r.Machine == b.Kind && Team.IsUnlocked(recipeId)) b.Recipe = recipeId;
+    }
+
     public Result SetChannel(int buildingId, int channel)
     {
         if (!ById.TryGetValue(buildingId, out var b) || b.Kind != "link_port") return Result.Fail("Not a port");

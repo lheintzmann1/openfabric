@@ -43,14 +43,18 @@ public sealed class PlaceCmd : ICommand
     public int PlayerId { get; set; }
     public byte Tag => 1;
     public string Def; public int X, Y, Rot;
-    public PlaceCmd(string def, int x, int y, int rot) { Def = def; X = x; Y = y; Rot = rot; }
+    /// <summary>Optional recipe to preset on the new building (used by blueprints).</summary>
+    public string Recipe;
+    public PlaceCmd(string def, int x, int y, int rot, string recipe = "") { Def = def; X = x; Y = y; Rot = rot; Recipe = recipe; }
     public Result Execute(Simulation s, Player p)
     {
         if (!Simulation.InReach(p, X, Y)) return Result.Fail("Out of reach");
-        return s.Place(p, Def, X, Y, Rot);
+        var r = s.Place(p, Def, X, Y, Rot);
+        if (r.Ok && Recipe != "") s.PresetRecipe(X, Y, Recipe);
+        return r;
     }
-    public void Write(BinaryWriter w) { w.Write(Def); w.Write(X); w.Write(Y); w.Write(Rot); }
-    public static PlaceCmd Read(BinaryReader r) => new(r.ReadString(), r.ReadInt32(), r.ReadInt32(), r.ReadInt32());
+    public void Write(BinaryWriter w) { w.Write(Def); w.Write(X); w.Write(Y); w.Write(Rot); w.Write(Recipe); }
+    public static PlaceCmd Read(BinaryReader r) => new(r.ReadString(), r.ReadInt32(), r.ReadInt32(), r.ReadInt32(), r.ReadString());
 }
 
 public sealed class RemoveCmd(int x, int y) : ICommand

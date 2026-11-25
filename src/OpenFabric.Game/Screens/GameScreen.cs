@@ -32,6 +32,9 @@ public sealed class GameScreen : Screen
     (int x, int y)? mineTarget;
     bool wasMining;
     float toastCooldown;
+    Blueprint? clipboard;
+    Blueprint? pasting;
+    (int x, int y)? selStart;
     bool disconnectedShown;
     string chatText = "";
     bool chatOpen, chatFresh;
@@ -173,15 +176,18 @@ public sealed class GameScreen : Screen
         if (ui.KeyPressed(Keys.Enter) && Session.IsMultiplayer) { chatOpen = true; chatFresh = true; ui.FocusId = "chat"; chatText = ""; return; }
         if (ui.KeyPressed(Keys.Escape))
         {
-            if (ctx.HeldBuild != null) ctx.HeldBuild = null;
+            if (pasting != null) pasting = null;
+            else if (ctx.HeldBuild != null) ctx.HeldBuild = null;
             else if (!windows.CloseTop()) paused = true;
         }
+        if (ui.Ctrl && ui.KeyPressed(Keys.V) && clipboard != null && clipboard.Count > 0) { pasting = clipboard; ctx.HeldBuild = null; Session.Toast($"Pasting {pasting.Count} buildings — R rotates, click to place, Esc cancels"); }
+        if (pasting != null && ui.KeyPressed(Keys.R)) pasting = pasting.Rotated();
         if (ui.KeyPressed(Keys.F3)) showDebug = !showDebug;
         if (ui.KeyPressed(Keys.M)) showMinimap = !showMinimap;
         if (ui.KeyPressed(Keys.O)) buildings.PowerOverlay = !buildings.PowerOverlay;
         if (ui.KeyPressed(Keys.F5)) SaveGame(quiet: false);
-        if (ui.KeyPressed(Keys.R) && ctx.HeldBuild != null) ctx.HeldRot = Dir.Norm(ctx.HeldRot + (ui.Shift ? -1 : 1));
-        if (ui.KeyPressed(Keys.R) && ctx.HeldBuild == null && !ui.OverUi)
+        if (ui.KeyPressed(Keys.R) && ctx.HeldBuild != null && pasting == null) ctx.HeldRot = Dir.Norm(ctx.HeldRot + (ui.Shift ? -1 : 1));
+        if (ui.KeyPressed(Keys.R) && ctx.HeldBuild == null && pasting == null && !ui.OverUi)
         {
             var (tx, ty) = MouseTile();
             if (Sim.At(tx, ty) is { } hb) Session.Send(new RotateCmd(tx, ty));
@@ -226,6 +232,13 @@ public sealed class GameScreen : Screen
         return ((int)MathF.Floor(m.X - w / 2f + 0.5f), (int)MathF.Floor(m.Y - h / 2f + 0.5f));
     }
 
+    (int x, int y) PasteOrigin(Blueprint bp)
+    {
+        var (w, h) = bp.Size();
+        var m = cam.ScreenToWorld(new Vector2(Ui.Mouse.X, Ui.Mouse.Y));
+        return ((int)MathF.Floor(m.X - w / 2f + 0.5f), (int)MathF.Floor(m.Y - h / 2f + 0.5f));
+    }
+
     void HandleMovement(float dt)
     {
         var ui = Ui;
@@ -258,6 +271,36 @@ public sealed class GameScreen : Screen
         bool uiBlocked = ui.OverUi || ui.TextFocused; // OverUi from the previous Draw pass
         if (!uiBlocked && ui.Wheel != 0 && !ui.Ctrl) cam.ZoomAt(new Vector2(ui.Mouse.X, ui.Mouse.Y), MathF.Pow(1.12f, ui.Wheel / 120f));
 
+        if (pasting != null)
+        {
+            if (!uiBlocked && ui.RightPressed) { pasting = null; return; }
+            if (!uiBlocked && ui.LeftPressed)
+            {
+                var (ox, oy) = PasteOrigin(pasting);
+                int ok = 0, fail = 0;
+                foreach (var e in pasting.Entries.OrderBy(e => Math.Abs(e.Dx - pasting.Size().w / 2) + Math.Abs(e.Dy - pasting.Size().h / 2)))
+                {
+                    var r = Session.Send(new PlaceCmd(e.Def, ox + e.Dx, oy + e.Dy, e.Rot, e.Recipe));
+                    if (r.Ok) ok++; else fail++;
+                }
+                if (fail > 0 && !Session.IsMultiplayer) Session.Toast($"Placed {ok}, {fail} failed (blocked or missing materials)");
+            }
+            return;
+        }
+        // Ctrl+drag selects an area to copy
+        if (ctx.HeldBuild == null && ui.Ctrl && !uiBlocked)
+        {
+            var (sx, sy) = MouseTile();
+            if (ui.LeftPressed) selStart = (sx, sy);
+            if (ui.LeftReleased && selStart is { } st)
+            {
+                clipboard = Blueprint.Capture(Sim, st.x, st.y, sx, sy);
+                Session.Toast(clipboard.Count > 0 ? $"Copied {clipboard.Count} buildings (Ctrl+V to paste)" : "Nothing to copy there");
+                selStart = null;
+            }
+            return;
+        }
+        if (!ui.Left) selStart = null;
         if (ctx.HeldBuild != null && Data.Buildings.TryGetValue(ctx.HeldBuild, out var def))
         {
             if (!uiBlocked && ui.RightPressed) { ctx.HeldBuild = null; return; }
@@ -450,6 +493,25 @@ public sealed class GameScreen : Screen
         if (ui.TextFocused) return;
         var (tx, ty) = MouseTile();
         bool blocked = ui.OverUi;
+        if (pasting != null && !blocked)
+        {
+            var (ox, oy) = PasteOrigin(pasting);
+            foreach (var e in pasting.Entries)
+            {
+                if (!Data.Buildings.TryGetValue(e.Def, out var ed)) continue;
+                var chk = Sim.CanPlace(e.Def, ox + e.Dx, oy + e.Dy, e.Rot, out _);
+                buildings.DrawGhost(Sim, ed, ox + e.Dx, oy + e.Dy, e.Rot, chk.Ok);
+            }
+        }
+        if (selStart is { } ss && ui.Left && ui.Ctrl)
+        {
+            var (cx2, cy2) = MouseTile();
+            int rx0 = Math.Min(ss.x, cx2), ry0 = Math.Min(ss.y, cy2), rx1 = Math.Max(ss.x, cx2), ry1 = Math.Max(ss.y, cy2);
+            var a = cam.WorldToScreen(new Vector2(rx0, ry0)); var bpt = cam.WorldToScreen(new Vector2(rx1 + 1, ry1 + 1));
+            var rect = new Rectangle((int)a.X, (int)a.Y, (int)(bpt.X - a.X), (int)(bpt.Y - a.Y));
+            g.Rect(rect, new Color(90, 170, 255, 40));
+            g.Outline(rect, new Color(120, 190, 255, 220), 2);
+        }
         // placement ghost
         if (ctx.HeldBuild != null && Data.Buildings.TryGetValue(ctx.HeldBuild, out var def) && !blocked)
         {
@@ -482,7 +544,18 @@ public sealed class GameScreen : Screen
         else if (!blocked)
         {
             var hov = Sim.At(tx, ty);
-            if (hov != null) buildings.Highlight(hov, new Color(255, 255, 255, 140));
+            if (hov != null)
+            {
+                buildings.Highlight(hov, new Color(255, 255, 255, 140));
+                var st = BuildingInfo.State(Sim, hov);
+                var tipLines = new List<string> { hov.Def.Name };
+                var stText = BuildingInfo.Text(st);
+                if (stText != "") tipLines.Add(stText);
+                if (hov.Recipe != null && Data.Recipes.TryGetValue(hov.Recipe, out var hr)) tipLines.Add("Recipe: " + hr.Name);
+                if (hov.Kind == "drill" && hov.MineItem != null) tipLines.Add("Mining " + Data.Items[hov.MineItem].Name);
+                if (hov.PNet != null && hov.Def.PowerKw > 0) tipLines.Add($"Power {hov.PNet.Satisfaction * 100:0}%");
+                ui.Tip(string.Join("\n", tipLines));
+            }
             else
             {
                 var (rd, amt) = Sim.Map.ResourceAt(tx, ty);
@@ -545,6 +618,7 @@ public sealed class GameScreen : Screen
             }
         }
         else g.Text("All milestones complete!", new Vector2(panel.X + 10, panel.Y + 8), 16, Theme.Good);
+        DrawHint(new Rectangle(panel.Right + 10, panel.Y, Math.Min(520, W - panel.Right - 320), 40));
 
         // power summary
         double dem = 0, cap = 0; foreach (var n in Sim.PowerNets) { dem += n.DemandKw; cap += n.CapacityKw; }
@@ -578,6 +652,26 @@ public sealed class GameScreen : Screen
         DrawMultiplayerHud();
         DrawLog();
         DrawQueueStatus();
+    }
+
+    string? Hint()
+    {
+        if (!Sim.Buildings.Any(b => b.Kind == "hub")) return "Pick the HQ from the Special tab below and place it — it's free. Your milestones are delivered there.";
+        if (Sim.Team.Milestones.Count == 0 && !Sim.Buildings.Any(b => b.Kind == "smelter"))
+            return "Hold LMB on an ore patch to mine by hand. Build Stone Furnaces (Production tab) to smelt plates; E opens crafting.";
+        if (Sim.Team.Milestones.Count == 0) return "Feed furnaces with coal + ore, then press T to deliver items for the first milestone at the HQ.";
+        if (!Sim.Buildings.Any(b => b.Kind == "drill")) return "Automate: place a Burner Drill on ore, fuel it with coal, and belt the ore to a furnace.";
+        if (Sim.Team.ResearchDone.Count == 0 && Sim.Team.CurrentTier(Data) >= 2) return "Build a Lab and feed it science packs, then queue research in the T window.";
+        return null;
+    }
+
+    void DrawHint(Rectangle r)
+    {
+        var h = Hint();
+        if (h == null || r.Width < 200) return;
+        Ui.Panel(r, null, new Color(40, 30, 6, 225));
+        G.Icon("lightbulb", new Vector2(r.X + 18, r.Center.Y), 20, Theme.Accent);
+        Ui.Wrapped(h, new Vector2(r.X + 36, r.Y + 5), r.Width - 46, 12, Theme.Text);
     }
 
     void DrawMultiplayerHud()
