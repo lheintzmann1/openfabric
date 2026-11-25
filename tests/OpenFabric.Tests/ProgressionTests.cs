@@ -8,7 +8,7 @@ public class ProgressionTests
 {
     static readonly HashSet<string> FixedKinds = new()
     {
-        "hub", "drill", "pump", "belt", "splitter", "merger", "underground", "loader", "chest", "sink", "pole",
+        "hub", "drill", "pump", "belt", "splitter", "dual_splitter", "merger", "underground", "loader", "chest", "sink", "pole",
         "generator_fuel", "generator_fluid", "generator_passive", "generator_reactor", "battery", "pipe", "tank", "lab", "link_port",
     };
 

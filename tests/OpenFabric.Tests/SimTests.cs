@@ -248,8 +248,9 @@ public class SimTests
     [Fact]
     public void CommandCodecRoundTrip()
     {
-        ICommand[] cmds = { new PlaceCmd("belt", 3, -4, 2), new RemoveCmd(1, 2), new CraftCmd("gear", 3), new MoveCmd(1.5f, 2.5f),
-                            new TransferCmd(5, "coal", 10, true), new ResearchCmd("r1", true), new ChatCmd("hi") };
+        ICommand[] cmds = { new PlaceCmd("belt", 3, -4, 2, bend: 2), new RemoveCmd(1, 2), new CraftCmd("gear", 3), new MoveCmd(1.5f, 2.5f),
+                            new TransferCmd(5, "coal", 10, true), new ResearchCmd("r1", true), new ChatCmd("hi"),
+                            new SetBeltBendCmd(2, 3, 3), new SetSplitterCmd(7, 1, 2, "iron_plate") };
         foreach (var c in cmds)
         {
             c.PlayerId = 9;
@@ -261,6 +262,151 @@ public class SimTests
             Assert.Equal(c.GetType(), back.GetType());
             Assert.Equal(9, back.PlayerId);
         }
+    }
+
+    [Fact]
+    public void BeltAutoCurvesAndCarriesAtFullThroughput()
+    {
+        var sim = TestData.NewSim();
+        var (x, y) = TestData.FindFlat(sim, 10, 10);
+        // East belt into South belt -> South belt's Right side is West -> curve from Right (3)
+        Ok(sim.Place(null, "belt", x, y, 0));
+        Ok(sim.Place(null, "belt", x + 1, y, 0));
+        Ok(sim.Place(null, "belt", x + 2, y, 1));
+        Ok(sim.Place(null, "belt", x + 2, y + 1, 1));
+        Ok(sim.Place(null, "chest", x + 2, y + 2, 0));
+
+        var corner = sim.At(x + 2, y)!;
+        Assert.Equal(3, sim.BeltEffectiveBend(corner));
+
+        // Adding a back feeder turns it back into a straight T-junction
+        Ok(sim.Place(null, "belt", x + 2, y - 1, 1));
+        Assert.Equal(1, sim.BeltEffectiveBend(corner));
+        Ok(sim.Remove(null, x + 2, y - 1));
+        Assert.Equal(3, sim.BeltEffectiveBend(corner));
+
+        // Explicit bend overrides auto
+        Ok(sim.SetBeltBend(x + 2, y, 1));
+        Assert.Equal(1, sim.BeltEffectiveBend(corner));
+        Ok(sim.SetBeltBend(x + 2, y, 0));
+        Assert.Equal(3, sim.BeltEffectiveBend(corner));
+
+        var first = sim.At(x, y)!;
+        var chest = sim.At(x + 2, y + 2)!;
+        for (int t = 0; t < 15 * Simulation.TickRate; t++) { sim.TryGive(first, "iron_plate", 0); sim.Step(); }
+        double rate = chest.In.Get("iron_plate") / 12.0; // steady rate after warmup
+        Assert.True(chest.In.Get("iron_plate") >= 75, $"items {chest.In.Get("iron_plate")}, rate~{rate}");
+    }
+
+    [Fact]
+    public void DualSplitterBalancesInputsAndOutputsWithoutPhaseLock()
+    {
+        var sim = TestData.NewSim();
+        var (x, y) = TestData.FindFlat(sim, 10, 8);
+        // 2x1 splitter facing East at (x+2, y) covering (x+2,y)=Left and (x+2,y+1)=Right
+        Ok(sim.Place(null, "belt", x, y, 0));
+        Ok(sim.Place(null, "belt", x + 1, y, 0));
+        Ok(sim.Place(null, "belt", x, y + 1, 0));
+        Ok(sim.Place(null, "belt", x + 1, y + 1, 0));
+        Ok(sim.Place(null, "belt_splitter", x + 2, y, 0));
+        Ok(sim.Place(null, "belt", x + 3, y, 0));
+        Ok(sim.Place(null, "belt", x + 3, y + 1, 0));
+        Ok(sim.Place(null, "chest", x + 4, y, 0));
+        Ok(sim.Place(null, "chest", x + 4, y + 1, 0));
+
+        var inL = sim.At(x, y)!;
+        var inR = sim.At(x, y + 1)!;
+        for (int t = 0; t < 20 * Simulation.TickRate; t++)
+        {
+            sim.TryGive(inL, "iron_ore", 0);
+            sim.TryGive(inR, "copper_ore", 0);
+            sim.Step();
+        }
+        var outL = sim.At(x + 4, y)!.In;
+        var outR = sim.At(x + 4, y + 1)!.In;
+        Assert.True(outL.Get("iron_ore") > 40 && outL.Get("copper_ore") > 40, $"L: {outL.Get("iron_ore")}/{outL.Get("copper_ore")}");
+        Assert.True(outR.Get("iron_ore") > 40 && outR.Get("copper_ore") > 40, $"R: {outR.Get("iron_ore")}/{outR.Get("copper_ore")}");
+        Assert.True(Math.Abs(outL.Get("iron_ore") - outR.Get("iron_ore")) <= 2);
+        Assert.True(Math.Abs(outL.Get("copper_ore") - outR.Get("copper_ore")) <= 2);
+    }
+
+    [Fact]
+    public void DualSplitterPriorityAndStrictFilterWork()
+    {
+        var sim = TestData.NewSim();
+        var (x, y) = TestData.FindFlat(sim, 10, 8);
+        Ok(sim.Place(null, "belt", x, y, 0));
+        Ok(sim.Place(null, "belt", x, y + 1, 0));
+        Ok(sim.Place(null, "belt_splitter", x + 1, y, 0));
+        Ok(sim.Place(null, "chest", x + 2, y, 0));     // Left output
+        Ok(sim.Place(null, "chest", x + 2, y + 1, 0)); // Right output
+
+        var sp = sim.At(x + 1, y)!;
+        // Filter iron_plate to Right (outPrio=2)
+        Ok(sim.SetSplitter(sim.GetPlayer(1)!, sp.Id, inPrio: 1, outPrio: 2, filter: "iron_plate"));
+        var inL = sim.At(x, y)!;
+        var inR = sim.At(x, y + 1)!;
+        for (int t = 0; t < 10 * Simulation.TickRate; t++)
+        {
+            sim.TryGive(inL, t % 2 == 0 ? "iron_plate" : "stone", 0);
+            sim.TryGive(inR, "stone", 0);
+            sim.Step();
+        }
+        var outL = sim.At(x + 2, y)!.In;
+        var outR = sim.At(x + 2, y + 1)!.In;
+        Assert.Equal(0, outL.Get("iron_plate"));
+        Assert.Equal(0, outR.Get("stone"));
+        Assert.True(outR.Get("iron_plate") > 20);
+        Assert.True(outL.Get("stone") > 20);
+    }
+
+    [Fact]
+    public void DualSplitterRotatesInPlaceWhenRoom()
+    {
+        var sim = TestData.NewSim();
+        var (x, y) = TestData.FindFlat(sim, 6, 6);
+        Ok(sim.Place(null, "belt_splitter", x, y, 0)); // 1x2
+        var sp = sim.At(x, y)!;
+        Assert.Equal(1, sp.W); Assert.Equal(2, sp.H);
+        Ok(sim.Rotate(x, y)); // -> 2x1
+        Assert.Equal(1, sp.Rot); Assert.Equal(2, sp.W); Assert.Equal(1, sp.H);
+        // blocking (x, y+1) prevents rotating back to 1x2
+        Ok(sim.Place(null, "chest", x, y + 1, 0));
+        Assert.False(sim.Rotate(x, y).Ok);
+    }
+
+    [Fact]
+    public void UndergroundLinksExitFirstAndEntranceFirst()
+    {
+        var sim = TestData.NewSim();
+        var (x, y) = TestData.FindFlat(sim, 10, 4);
+        // place exit first, then entrance behind it
+        Ok(sim.Place(null, "underground", x + 4, y, 0));
+        Ok(sim.Place(null, "underground", x + 1, y, 0));
+        Ok(sim.Place(null, "belt", x, y, 0));
+        Ok(sim.Place(null, "chest", x + 5, y, 0));
+        var b = sim.At(x, y)!;
+        for (int t = 0; t < 12 * Simulation.TickRate; t++) { sim.TryGive(b, "stone", 0); sim.Step(); }
+        Assert.True(sim.At(x + 5, y)!.In.Get("stone") > 20);
+    }
+
+    [Fact]
+    public void SaveLoadPreservesBeltBendAndSplitterSettings()
+    {
+        var sim = TestData.NewSim();
+        var (x, y) = TestData.FindFlat(sim, 8, 8);
+        Ok(sim.Place(null, "belt", x, y, 1, bend: 2));
+        Ok(sim.Place(null, "belt_splitter", x + 2, y, 0));
+        var sp = sim.At(x + 2, y)!;
+        Ok(sim.SetSplitter(sim.GetPlayer(1)!, sp.Id, 1, 2, "coal"));
+
+        var copy = Simulation.LoadFromBytes(TestData.Make(), sim.SaveToBytes());
+        Assert.Equal(2, copy.At(x, y)!.BeltBend);
+        var sp2 = copy.At(x + 2, y)!;
+        Assert.Equal(1, sp2.SplitterInPriority);
+        Assert.Equal(2, sp2.SplitterOutPriority);
+        Assert.Equal("coal", sp2.SplitterFilter);
+        Assert.Equal(sim.StateHash(), copy.StateHash());
     }
 
     [Fact]

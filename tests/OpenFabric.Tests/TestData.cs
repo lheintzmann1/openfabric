@@ -28,6 +28,7 @@ internal static class TestData
         B("belt", "belt", props: new() { ["speed"] = 1.875 });
         B("belt2", "belt", props: new() { ["speed"] = 3.75 });
         B("splitter", "splitter");
+        B("belt_splitter", "dual_splitter", 1, 2);
         B("merger", "merger");
         B("underground", "underground", props: new() { ["range"] = 4, ["speed"] = 1.875 });
         B("loader", "loader", props: new() { ["rate"] = 5 });
