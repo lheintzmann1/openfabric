@@ -19,6 +19,8 @@ public sealed class Ui
     public bool Left, LeftPressed, LeftReleased, Right, RightPressed;
     public int Wheel;
     public bool Shift, Ctrl;
+    /// <summary>True if any UI element covered the mouse during the previous frame's draw (use this for world input).</summary>
+    public bool WasOverUi;
     public bool OverUi;
     public Point Screen;
     KeyboardState kb, prevKb;
@@ -42,6 +44,7 @@ public sealed class Ui
         Wheel = ms.ScrollWheelValue - prevMs.ScrollWheelValue;
         Shift = kb.IsKeyDown(Keys.LeftShift) || kb.IsKeyDown(Keys.RightShift);
         Ctrl = kb.IsKeyDown(Keys.LeftControl) || kb.IsKeyDown(Keys.RightControl);
+        WasOverUi = OverUi;
         OverUi = false;
         tooltip = null;
         scrollUsed = false;
@@ -54,7 +57,8 @@ public sealed class Ui
     public void FeedChar(char c) => typed.Add(c);
     public void EndFrameInput() => typed.Clear();
 
-    public bool Hover(Rectangle r) => r.Contains(Mouse);
+    Rectangle? clip;
+    public bool Hover(Rectangle r) => r.Contains(Mouse) && (clip == null || clip.Value.Contains(Mouse));
 
     /// <summary>Mark an area as UI-covered (mouse won't reach the world).</summary>
     public void Block(Rectangle r) { if (r.Contains(Mouse)) OverUi = true; }
@@ -169,6 +173,7 @@ public sealed class Ui
     /// <summary>Begin clipping to a rectangle (ends the current batch). Pair with <see cref="EndClip"/>.</summary>
     public void BeginClip(Rectangle r)
     {
+        clip = r;
         G.Sb.End();
         G.Sb.Begin(samplerState: SamplerState.PointClamp, rasterizerState: ClipState);
         var vp = G.Sb.GraphicsDevice.Viewport.Bounds;
@@ -177,6 +182,7 @@ public sealed class Ui
 
     public void EndClip()
     {
+        clip = null;
         G.Sb.End();
         G.Sb.Begin(samplerState: SamplerState.PointClamp);
     }

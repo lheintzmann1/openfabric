@@ -187,7 +187,7 @@ public sealed class GameScreen : Screen
         if (ui.KeyPressed(Keys.O)) buildings.PowerOverlay = !buildings.PowerOverlay;
         if (ui.KeyPressed(Keys.F5)) SaveGame(quiet: false);
         if (ui.KeyPressed(Keys.R) && ctx.HeldBuild != null && pasting == null) ctx.HeldRot = Dir.Norm(ctx.HeldRot + (ui.Shift ? -1 : 1));
-        if (ui.KeyPressed(Keys.R) && ctx.HeldBuild == null && pasting == null && !ui.OverUi)
+        if (ui.KeyPressed(Keys.R) && ctx.HeldBuild == null && pasting == null && !ui.WasOverUi)
         {
             var (tx, ty) = MouseTile();
             if (Sim.At(tx, ty) is { } hb) Session.Send(new RotateCmd(tx, ty));
@@ -268,7 +268,7 @@ public sealed class GameScreen : Screen
     {
         var ui = Ui;
         mineTarget = null;
-        bool uiBlocked = ui.OverUi || ui.TextFocused; // OverUi from the previous Draw pass
+        bool uiBlocked = ui.WasOverUi || ui.TextFocused;
         if (!uiBlocked && ui.Wheel != 0 && !ui.Ctrl) cam.ZoomAt(new Vector2(ui.Mouse.X, ui.Mouse.Y), MathF.Pow(1.12f, ui.Wheel / 120f));
 
         if (pasting != null)
@@ -419,14 +419,10 @@ public sealed class GameScreen : Screen
         sb.End();
 
         sb.Begin(samplerState: SamplerState.PointClamp);
-        bool wasOver = false;
-        ui.OverUi = false;
         DrawHud();
         DrawPalette();
         windows.Draw(ctx);
         if (paused) DrawPause();
-        wasOver = ui.OverUi;
-        ui.OverUi = wasOver; // read by next Update
         if (showDebug) DrawDebug(gt);
         sb.End();
     }
@@ -492,7 +488,7 @@ public sealed class GameScreen : Screen
         var ui = Ui; var g = G;
         if (ui.TextFocused) return;
         var (tx, ty) = MouseTile();
-        bool blocked = ui.OverUi;
+        bool blocked = ui.WasOverUi;
         if (pasting != null && !blocked)
         {
             var (ox, oy) = PasteOrigin(pasting);

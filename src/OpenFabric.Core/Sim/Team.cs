@@ -125,5 +125,16 @@ public sealed class ProductionStats
         return (p * 60.0 / seconds, c * 60.0 / seconds);
     }
 
+    /// <summary>Per-second counts for the last <paramref name="seconds"/> completed seconds, oldest first.</summary>
+    public float[] History(string item, bool produced, int seconds)
+    {
+        seconds = Math.Clamp(seconds, 1, Buckets - 1);
+        var r = new float[seconds];
+        if (!s.TryGetValue(item, out var x)) return r;
+        var src = produced ? x.P : x.C;
+        for (int i = 0; i < seconds; i++) r[seconds - 1 - i] = src[((cursor - 1 - i) % Buckets + Buckets) % Buckets];
+        return r;
+    }
+
     public (double produced, double consumed) Totals(string item) => s.TryGetValue(item, out var x) ? (x.TotalP, x.TotalC) : (0, 0);
 }

@@ -9,5 +9,7 @@ public static class WindowRegistry
     {
         yield return new InventoryWindow();
         yield return new TechWindow();
+        yield return new StatsWindow();
+        yield return new RecipeBookWindow();
     }
 }
