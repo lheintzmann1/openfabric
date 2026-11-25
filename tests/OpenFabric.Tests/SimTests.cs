@@ -104,6 +104,24 @@ public class SimTests
     }
 
     [Fact]
+    public void CrafterBuffersHoldUpToOneHundredItems()
+    {
+        var sim = TestData.NewSim();
+        var (x, y) = TestData.FindFlat(sim, 8, 4);
+        Ok(sim.Place(null, "furnace", x, y, 0));
+        var furnace = sim.At(x, y)!;
+
+        for (int i = 0; i < 100; i++)
+            Assert.True(sim.TryGive(furnace, "iron_ore", 0), $"Could not insert item {i + 1}");
+        Assert.False(sim.TryGive(furnace, "iron_ore", 0));
+
+        furnace.FuelLeftMJ = 100;
+        TestData.Run(sim, 400);
+
+        Assert.Equal(100, furnace.Out.Get("iron_plate"));
+    }
+
+    [Fact]
     public void ElectricMachineNeedsPower_AndBrownoutSlowsIt()
     {
         var sim = TestData.NewSim();

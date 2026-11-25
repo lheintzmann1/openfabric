@@ -15,6 +15,8 @@ public readonly record struct Result(bool Ok, string Message = "")
 /// </summary>
 public sealed partial class Simulation
 {
+    const int SolidItemBufferCapacity = 100;
+
     public const int TickRate = 30;
     public const double Dt = 1.0 / TickRate;
     public const float BeltSpacing = 0.25f;
@@ -461,7 +463,7 @@ public sealed partial class Simulation
             foreach (var inp in r.Inputs)
                 if (inp.Item == item && !Data.Items[item].Fluid)
                 {
-                    double cap = Math.Max(inp.Amount * 2, inp.Amount + 1);
+                    double cap = Math.Max(inp.Amount, SolidItemBufferCapacity);
                     if (t.In.Get(item) >= cap) return false;
                     t.In.Add(item, 1);
                     return true;

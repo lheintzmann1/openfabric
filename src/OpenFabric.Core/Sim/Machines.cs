@@ -64,7 +64,7 @@ public sealed partial class Simulation
             }
             foreach (var o in r.Outputs)
             {
-                double cap = Data.Items[o.Item].Fluid ? o.Amount * 2 : Math.Max(o.Amount * 2, 4);
+                double cap = Data.Items[o.Item].Fluid ? o.Amount * 2 : Math.Max(o.Amount, SolidItemBufferCapacity);
                 if (b.Out.Get(o.Item) + o.Amount > cap + 1e-9) return;
             }
             foreach (var inp in r.Inputs) { b.In.Take(inp.Item, inp.Amount); Stats.Consumed(inp.Item, inp.Amount); }
@@ -122,7 +122,7 @@ public sealed partial class Simulation
         b.Active = false;
         if (b.NeedsScan) ScanDrill(b);
         if (b.MineItem == null) return;
-        double cap = b.MineFluid ? Math.Max(2, b.Def.Prop("rate")) * 2 : 5;
+        double cap = b.MineFluid ? Math.Max(2, b.Def.Prop("rate")) * 2 : SolidItemBufferCapacity;
         if (b.Out.Get(b.MineItem) >= cap) return;
 
         double f = 1;
