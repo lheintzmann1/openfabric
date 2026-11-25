@@ -1,0 +1,66 @@
+name: Release
+
+# Push a tag like v0.1.0 (or run manually) to build self-contained packages for Linux, Windows and macOS
+# and attach them to a GitHub release.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  package:
+    name: Package ${{ matrix.rid }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest, rid: linux-x64,   archive: tar.gz }
+          - { os: windows-latest, rid: win-x64,    archive: zip }
+          - { os: macos-latest,  rid: osx-arm64,   archive: tar.gz }
+          - { os: macos-13,      rid: osx-x64,     archive: tar.gz }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - name: Test
+        run: dotnet test -c Release
+      - name: Publish
+        shell: bash
+        run: |
+          dotnet publish src/OpenFabric.Game -c Release -r ${{ matrix.rid }} --self-contained true \
+            -p:DebugType=None -p:DebugSymbols=false -o dist/OpenFabric-${{ matrix.rid }}
+          cp LICENSE THIRD_PARTY_NOTICES.md README.md dist/OpenFabric-${{ matrix.rid }}/
+      - name: Archive (zip)
+        if: matrix.archive == 'zip'
+        shell: pwsh
+        run: Compress-Archive -Path dist/OpenFabric-${{ matrix.rid }} -DestinationPath OpenFabric-${{ matrix.rid }}.zip
+      - name: Archive (tar.gz)
+        if: matrix.archive == 'tar.gz'
+        shell: bash
+        run: |
+          chmod +x dist/OpenFabric-${{ matrix.rid }}/OpenFabric || true
+          tar -C dist -czf OpenFabric-${{ matrix.rid }}.tar.gz OpenFabric-${{ matrix.rid }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: OpenFabric-${{ matrix.rid }}
+          path: OpenFabric-${{ matrix.rid }}.*
+
+  release:
+    name: Publish GitHub release
+    needs: package
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/*
+          generate_release_notes: true

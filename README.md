@@ -1,5 +1,8 @@
 # OpenFabric
 
+[![CI](https://github.com/lheintzmann1/openfabric/actions/workflows/ci.yml/badge.svg)](https://github.com/lheintzmann1/openfabric/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 An original 2D top-down factory game inspired by Factorio and Satisfactory. Mine, smelt, belt, power, research and
 automate your way through **13 tiers** — from a hand drill and stone furnace to arc furnaces, oil, nuclear fission,
 fusion and an orbital megaproject. Procedurally generated infinite maps, solo or small-group co-op.
@@ -55,3 +58,12 @@ each player has an own inventory and crafting queue.
 - `src/OpenFabric.Net` — LiteNetLib host/client + protocol
 - `src/OpenFabric.Game` — MonoGame client (screens, immediate-mode UI, windows, renderers)
 - `data/` — game content; `tests/` — xUnit (simulation, content consistency, scripted playthrough, loopback multiplayer)
+
+## Downloads & releases
+Tagged releases (`v*`) are built by GitHub Actions for **Linux (x64), Windows (x64) and macOS (Apple Silicon + Intel)** as
+self-contained archives — unzip and run `OpenFabric` / `OpenFabric.exe`. The macOS builds are unsigned: right-click → Open the
+first time (or `xattr -dr com.apple.quarantine OpenFabric-osx-*`). Every push and pull request builds and tests on all three
+platforms (`.github/workflows/ci.yml`). To cut a release: `git tag v0.1.0 && git push origin v0.1.0`.
+
+## License
+MIT — see [LICENSE](LICENSE). Bundled fonts/icons and dependencies are listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
