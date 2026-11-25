@@ -31,6 +31,8 @@ public sealed class RecipeDef
     public bool Alternate { get; init; }
     /// <summary>Can the player craft this by hand?</summary>
     public bool Hand { get; init; }
+    /// <summary>Available from the very start (otherwise unlocked by a milestone or research).</summary>
+    public bool Start { get; init; }
 }
 
 public sealed class BuildingDef
@@ -49,6 +51,16 @@ public sealed class BuildingDef
     public List<Stack> Cost { get; init; } = new();
     /// <summary>Free-form numeric properties (belt speed, drill rate, generator output, pole radius...).</summary>
     public Dictionary<string, double> Props { get; init; } = new();
+    /// <summary>Fluid item id consumed/handled (generators, pumps, tanks).</summary>
+    public string Fluid { get; init; } = "";
+    /// <summary>Resource item id that must be under the footprint (e.g. geothermal vent).</summary>
+    public string Requires { get; init; } = "";
+    /// <summary>Item id output as waste (e.g. reactors).</summary>
+    public string Waste { get; init; } = "";
+    /// <summary>Restrict accepted fuel items (empty = any item with FuelMJ).</summary>
+    public List<string> Accepts { get; init; } = new();
+    /// <summary>Available from the very start.</summary>
+    public bool Start { get; init; }
     public double Prop(string key, double def = 0) => Props.TryGetValue(key, out var v) ? v : def;
 }
 
@@ -90,4 +102,22 @@ public sealed class ResourceDef
     public double MaxRichness { get; init; } = 900;
     /// <summary>If true one patch of this type is guaranteed near spawn.</summary>
     public bool Starter { get; init; }
+}
+
+public sealed class ResearchDef
+{
+    public string Id { get; init; } = "";
+    public string Name { get; init; } = "";
+    public string Description { get; init; } = "";
+    public string Icon { get; init; } = "science";
+    public int Tier { get; init; }
+    /// <summary>Science packs (items) consumed in total.</summary>
+    public List<Stack> Cost { get; init; } = new();
+    /// <summary>Lab-seconds at lab speed 1.</summary>
+    public double Time { get; init; } = 30;
+    public List<string> Requires { get; init; } = new();
+    /// <summary>Building/recipe ids unlocked.</summary>
+    public List<string> Unlocks { get; init; } = new();
+    /// <summary>Additive global bonuses: beltSpeed, drillSpeed, craftSpeed, inventorySlots, mineSpeed, powerEff.</summary>
+    public Dictionary<string, double> Mods { get; init; } = new();
 }

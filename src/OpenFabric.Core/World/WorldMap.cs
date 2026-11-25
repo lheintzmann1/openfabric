@@ -8,6 +8,8 @@ public sealed class WorldMap
     public readonly GameData Data;
     public readonly WorldGen Gen;
     readonly Dictionary<long, Chunk> chunks = new();
+    /// <summary>Per-chunk resource amount overrides (mined-out tiles). key: chunk -> (tile index -> amount).</summary>
+    public readonly Dictionary<long, Dictionary<int, int>> Overrides = new();
 
     public WorldMap(int seed, GameData data) { Data = data; Gen = new WorldGen(seed, data); }
 
@@ -19,8 +21,27 @@ public sealed class WorldMap
     public Chunk GetChunk(int cx, int cy)
     {
         long k = Key(cx, cy);
-        if (!chunks.TryGetValue(k, out var c)) chunks[k] = c = Gen.Generate(cx, cy);
+        if (!chunks.TryGetValue(k, out var c))
+        {
+            chunks[k] = c = Gen.Generate(cx, cy);
+            if (Overrides.TryGetValue(k, out var ov))
+                foreach (var (i, amt) in ov) { c.Amount[i] = amt; if (amt <= 0) c.Res[i] = 0; }
+        }
         return c;
+    }
+
+    /// <summary>Set the remaining amount of a resource tile (0 removes it). Remembered across chunk reloads and saves.</summary>
+    public void SetAmount(int tx, int ty, int amount)
+    {
+        var c = ChunkAt(tx, ty);
+        int i = Chunk.Idx(Mod(tx), Mod(ty));
+        if (c.Res[i] == 0) return;
+        c.Amount[i] = Math.Max(0, amount);
+        bool depleted = amount <= 0;
+        if (depleted) { c.Res[i] = 0; c.Version++; }
+        long k = Key(c.Cx, c.Cy);
+        if (!Overrides.TryGetValue(k, out var ov)) Overrides[k] = ov = new Dictionary<int, int>();
+        ov[i] = c.Amount[i];
     }
 
     public bool IsLoaded(int cx, int cy) => chunks.ContainsKey(Key(cx, cy));

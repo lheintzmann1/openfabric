@@ -11,6 +11,7 @@ public sealed class GameData
     public Dictionary<string, BuildingDef> Buildings { get; } = new();
     public List<TierDef> Tiers { get; } = new();
     public List<ResourceDef> Resources { get; } = new();
+    public Dictionary<string, ResearchDef> Research { get; } = new();
 
     static readonly JsonSerializerOptions Opts = new()
     {
@@ -30,6 +31,7 @@ public sealed class GameData
         foreach (var x in Read<BuildingDef>(dir, "buildings.json")) d.Buildings[x.Id] = x;
         d.Tiers.AddRange(Read<TierDef>(dir, "tiers.json").OrderBy(t => t.Index));
         d.Resources.AddRange(Read<ResourceDef>(dir, "resources.json"));
+        foreach (var x in Read<ResearchDef>(dir, "research.json")) d.Research[x.Id] = x;
         return d;
     }
 
@@ -69,6 +71,20 @@ public sealed class GameData
                 foreach (var u in m.Unlocks)
                     if (!Buildings.ContainsKey(u) && !Recipes.ContainsKey(u)) errs.Add($"milestone {m.Id}: unknown unlock '{u}'");
             }
+        foreach (var r in Research.Values)
+        {
+            foreach (var s in r.Cost) Need($"research {r.Id} cost", s.Item);
+            foreach (var q in r.Requires) if (!Research.ContainsKey(q)) errs.Add($"research {r.Id}: unknown requirement '{q}'");
+            foreach (var u in r.Unlocks)
+                if (!Buildings.ContainsKey(u) && !Recipes.ContainsKey(u)) errs.Add($"research {r.Id}: unknown unlock '{u}'");
+        }
+        foreach (var b in Buildings.Values)
+        {
+            if (b.Fluid != "") Need($"building {b.Id} fluid", b.Fluid);
+            if (b.Requires != "") Need($"building {b.Id} requires", b.Requires);
+            if (b.Waste != "") Need($"building {b.Id} waste", b.Waste);
+            foreach (var a in b.Accepts) Need($"building {b.Id} accepts", a);
+        }
         return errs;
     }
 }
