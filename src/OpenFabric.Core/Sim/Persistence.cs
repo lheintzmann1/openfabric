@@ -47,6 +47,8 @@ public sealed partial class Simulation
         foreach (var p in Players.Values)
         {
             w.Write(p.Id); w.Write(p.Name); w.Write(p.X); w.Write(p.Y); w.Write(p.Online);
+            w.Write(p.MineProgress); w.Write(p.LastMineTick); w.Write(p.MoveBudget);
+            w.Write(p.MiningTile.HasValue); if (p.MiningTile is { } mt) { w.Write(mt.x); w.Write(mt.y); }
             p.Inv.Write(w);
             w.Write(p.Queue.Count);
             foreach (var j in p.Queue) { w.Write(j.Recipe); w.Write(j.Progress); }
@@ -66,7 +68,7 @@ public sealed partial class Simulation
     static void WriteBuilding(BinaryWriter w, Building b)
     {
         w.Write(b.Id); w.Write(b.Def.Id); w.Write(b.X); w.Write(b.Y); w.Write(b.Rot);
-        w.Write(b.Recipe ?? ""); w.Write(b.Progress); w.Write(b.Crafting);
+        w.Write(b.Recipe ?? ""); w.Write(b.Progress); w.Write(b.Crafting); w.Write(b.Active);
         b.In.Write(w); b.Out.Write(w); b.Fuel.Write(w);
         w.Write(b.FuelLeftMJ); w.Write(b.Acc); w.Write(b.Clock); w.Write(b.Rr);
         w.Write(b.BeltCount);
@@ -94,6 +96,8 @@ public sealed partial class Simulation
         for (int i = 0; i < pn; i++)
         {
             var p = new Player { Id = r.ReadInt32(), Name = r.ReadString(), X = r.ReadSingle(), Y = r.ReadSingle(), Online = r.ReadBoolean() };
+            p.MineProgress = r.ReadDouble(); p.LastMineTick = r.ReadInt64(); p.MoveBudget = r.ReadDouble();
+            if (r.ReadBoolean()) p.MiningTile = (r.ReadInt32(), r.ReadInt32());
             p.Inv.Read(r);
             p.Inv.MaxSlots = Player.BaseSlots + (int)s.Team.Mod("inventorySlots");
             int qn = r.ReadInt32();
@@ -118,7 +122,7 @@ public sealed partial class Simulation
             if (!data.Buildings.TryGetValue(defId, out var def)) throw new InvalidDataException("Unknown building " + defId);
             var b = s.CreateBuilding(def, x, y, rot, id);
             var recipe = r.ReadString(); b.Recipe = recipe == "" ? null : recipe;
-            b.Progress = r.ReadDouble(); b.Crafting = r.ReadBoolean();
+            b.Progress = r.ReadDouble(); b.Crafting = r.ReadBoolean(); b.Active = r.ReadBoolean();
             b.In.Read(r); b.Out.Read(r); b.Fuel.Read(r);
             if (def.Kind is "chest" or "hub") b.In.MaxSlots = (int)def.Prop("slots", 24);
             b.FuelLeftMJ = r.ReadDouble(); b.Acc = r.ReadDouble(); b.Clock = r.ReadDouble(); b.Rr = r.ReadInt32();

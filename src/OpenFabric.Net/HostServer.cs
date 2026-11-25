@@ -19,7 +19,7 @@ public sealed class HostServer : IDisposable
     readonly List<TickEntry> localQueue = new();
     readonly List<(NetPeer peer, string name)> pendingJoins = new();
     readonly List<int> pendingLeaves = new();
-    readonly List<NetPeer> pendingResync = new();
+    readonly HashSet<int> pendingResync = new();
 
     public int Port { get; }
     public event Action<string>? Info;
@@ -59,7 +59,7 @@ public sealed class HostServer : IDisposable
                         if (ver != Protocol.Version) { peer.Send(Protocol.Refused("Version mismatch"), DeliveryMethod.ReliableOrdered); peer.Disconnect(); return; }
                         name = string.IsNullOrWhiteSpace(name) ? "Player" : name.Trim();
                         if (name.Length > 24) name = name[..24];
-                        pendingJoins.Add((peer, name));
+                        if (clients.TryGetValue(peer.Id, out var hc) && !hc.Joined && !pendingJoins.Any(j => j.peer.Id == peer.Id)) pendingJoins.Add((peer, name));
                         break;
                     }
                 case MsgType.Command:
@@ -72,7 +72,7 @@ public sealed class HostServer : IDisposable
                         }
                         break;
                     }
-                case MsgType.Resync: pendingResync.Add(peer); break;
+                case MsgType.Resync: pendingResync.Add(peer.Id); break;
             }
         }
         catch (Exception e) { Info?.Invoke("Bad packet: " + e.Message); }
@@ -114,9 +114,12 @@ public sealed class HostServer : IDisposable
         }
         localQueue.Clear();
 
+        var perPeer = new Dictionary<int, int>();
         while (incoming.Count > 0)
         {
             var (peer, cmd) = incoming.Dequeue();
+            int n = perPeer.GetValueOrDefault(peer.Id) + 1; perPeer[peer.Id] = n;
+            if (n > 8) continue; // flood protection: at most 8 commands per client per tick
             var r = Sim.Execute(cmd);
             batch.Entries.Add(new TickEntry { Kind = EntryKind.Command, Command = cmd, PlayerId = cmd.PlayerId });
             if (!r.Ok && peer.ConnectionState == ConnectionState.Connected)
@@ -133,8 +136,8 @@ public sealed class HostServer : IDisposable
 
         // newly joined peers get the post-tick snapshot and are ready for the next tick
         foreach (var (c, id) in newlyJoined) SendSnapshot(c);
-        foreach (var peer in pendingResync.ToList())
-            if (clients.TryGetValue(peer.Id, out var c)) { c.Ready = false; SendSnapshot(c); }
+        foreach (var pid in pendingResync)
+            if (clients.TryGetValue(pid, out var c) && c.Joined) { c.Ready = false; SendSnapshot(c); }
         pendingResync.Clear();
     }
 

@@ -88,6 +88,7 @@ public sealed class OpenFabricGame : Microsoft.Xna.Framework.Game
     {
         if (Quit) { Exit(); return; }
         Ui.Begin(new Point(GraphicsDevice.Viewport.Width, GraphicsDevice.Viewport.Height));
+        if (Ui.KeyPressed(Microsoft.Xna.Framework.Input.Keys.F11)) gdm.ToggleFullScreen();
         current?.Update(gt, (float)gt.ElapsedGameTime.TotalSeconds);
         Ui.EndFrameInput();
         base.Update(gt);

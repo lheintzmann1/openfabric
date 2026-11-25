@@ -100,3 +100,32 @@ public class RealDataFactoryTests(ITestOutputHelper output)
         Assert.Equal(sim.StateHash(), copy.StateHash());
     }
 }
+
+public class RealResearchTests
+{
+    [Fact]
+    public void LabCompletesFirstResearchAndAppliesItsEffects()
+    {
+        var d = GameData.Load(WorldTests.DataDir());
+        var sim = new Simulation(d, 3); sim.AddPlayer();
+        foreach (var b in d.Buildings.Keys) sim.Team.Unlocked.Add(b);
+        foreach (var r in d.Recipes.Keys) sim.Team.Unlocked.Add(r);
+        // cheapest root research
+        var node = d.Research.Values.Where(r => r.Requires.Count == 0).OrderBy(r => r.Cost.Sum(c => c.Amount)).First();
+        var (x, y) = TestData.FindFlat(sim, 14, 10);
+        Assert.True(sim.Place(null, "lab", x, y, 0).Ok);
+        Assert.True(sim.Place(null, "pole_small", x + 3, y, 0).Ok);
+        Assert.True(sim.Place(null, "combustion_generator", x + 4, y + 2, 0).Ok);
+        var lab = sim.At(x, y)!; var gen = sim.At(x + 4, y + 2)!;
+        Assert.True(sim.QueueResearch(node.Id).Ok);
+        var packs = node.Cost.Select(c => c.Item).ToList();
+        int guard = 0;
+        while (!sim.Team.ResearchDone.Contains(node.Id) && guard++ < 60 * 60 * 30)
+        {
+            if (guard % 15 == 0) { sim.TryGive(gen, "coal", 0); foreach (var p in packs) sim.TryGive(lab, p, 0); }
+            sim.Step();
+        }
+        Assert.Contains(node.Id, sim.Team.ResearchDone);
+        foreach (var u in node.Unlocks) Assert.True(sim.Team.IsUnlocked(u));
+    }
+}

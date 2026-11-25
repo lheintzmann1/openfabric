@@ -33,9 +33,12 @@ public sealed partial class Simulation
 
     public Result MovePlayer(Player p, float x, float y)
     {
+        if (!float.IsFinite(x) || !float.IsFinite(y) || Math.Abs(x) > 1e7f || Math.Abs(y) > 1e7f) return Result.Fail("Invalid position");
         float dx = x - p.X, dy = y - p.Y;
-        if (dx * dx + dy * dy > 9f) return Result.Fail("Too far");
+        double dist = Math.Sqrt(dx * dx + dy * dy);
+        if (dist > p.MoveBudget) return Result.Fail("Too fast");
         if (!Map.Walkable((int)MathF.Floor(x), (int)MathF.Floor(y))) return Result.Fail("Blocked");
+        p.MoveBudget -= dist;
         p.X = x; p.Y = y;
         return Result.Success;
     }
@@ -53,6 +56,8 @@ public sealed partial class Simulation
         var (def, amt) = Map.ResourceAt(tx, ty);
         if (def == null || def.Kind == ResourceKind.Fluid || amt <= 0) return Result.Fail("Nothing to mine");
         if (At(tx, ty) != null) return Result.Fail("Built over");
+        if (p.LastMineTick == Tick) return Result.Success; // at most one mining step per tick
+        p.LastMineTick = Tick;
         if (p.MiningTile != (tx, ty)) { p.MiningTile = (tx, ty); p.MineProgress = 0; }
         p.MineProgress += Dt * 0.8 * (1 + Team.Mod("mineSpeed"));
         if (p.MineProgress >= 1)
@@ -101,6 +106,7 @@ public sealed partial class Simulation
         var plan = new List<string>();
         for (int i = 0; i < Math.Clamp(count, 1, 100); i++)
             if (!ExpandCraft(r, avail, plan, 0)) return Result.Fail("Missing ingredients");
+        if (p.Queue.Count + plan.Count > 400) return Result.Fail("Craft queue is full");
         foreach (var id in plan) p.Queue.Add(new CraftJob { Recipe = id, Progress = -1 });
         return Result.Success;
     }
@@ -219,6 +225,7 @@ public sealed partial class Simulation
     {
         if (!ById.TryGetValue(buildingId, out var b)) return Result.Fail("No such building");
         if (!crafterKinds.Contains(b.Kind)) return Result.Fail("Not a crafter");
+        { float rx = b.Center.x - p.X, ry = b.Center.y - p.Y; if (rx * rx + ry * ry > (Player.Reach + 6) * (Player.Reach + 6)) return Result.Fail("Too far"); }
         if (recipeId != "")
         {
             if (!Data.Recipes.TryGetValue(recipeId, out var r) || r.Machine != b.Kind) return Result.Fail("Wrong recipe type");
@@ -240,9 +247,10 @@ public sealed partial class Simulation
         if (Data.Recipes.TryGetValue(recipeId, out var r) && r.Machine == b.Kind && Team.IsUnlocked(recipeId)) b.Recipe = recipeId;
     }
 
-    public Result SetChannel(int buildingId, int channel)
+    public Result SetChannel(Player p, int buildingId, int channel)
     {
         if (!ById.TryGetValue(buildingId, out var b) || b.Kind != "link_port") return Result.Fail("Not a port");
+        { float rx = b.Center.x - p.X, ry = b.Center.y - p.Y; if (rx * rx + ry * ry > (Player.Reach + 6) * (Player.Reach + 6)) return Result.Fail("Too far"); }
         b.Channel = Math.Clamp(channel, 0, 99);
         ChannelVersion++;
         return Result.Success;
@@ -254,7 +262,8 @@ public sealed partial class Simulation
         float dx = b.Center.x - p.X, dy = b.Center.y - p.Y;
         if (dx * dx + dy * dy > (Player.Reach + 6) * (Player.Reach + 6)) return Result.Fail("Too far");
         if (!Data.Items.TryGetValue(item, out var idef) || idef.Fluid) return Result.Fail("Can't move that");
-        count = Math.Floor(count);
+        if (!double.IsFinite(count)) return Result.Fail("Invalid amount");
+        count = Math.Min(Math.Floor(count), 1_000_000);
         if (count <= 0) return Result.Fail("Nothing to move");
 
         if (toPlayer)

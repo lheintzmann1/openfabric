@@ -13,6 +13,7 @@ public interface ICommand
 
 public static class CommandCodec
 {
+    static string Trunc(string s, int n) => s.Length > n ? s[..n] : s;
     public static void Write(BinaryWriter w, ICommand c)
     {
         w.Write(c.Tag); w.Write(c.PlayerId); c.Write(w);
@@ -30,7 +31,7 @@ public static class CommandCodec
             8 => new MineCmd(r.ReadInt32(), r.ReadInt32()), 9 => new StopMineCmd(),
             10 => new TransferCmd(r.ReadInt32(), r.ReadString(), r.ReadDouble(), r.ReadBoolean()),
             11 => new SubmitCmd(r.ReadString()), 12 => new ResearchCmd(r.ReadString(), r.ReadBoolean()),
-            13 => new SetChannelCmd(r.ReadInt32(), r.ReadInt32()), 14 => new ChatCmd(r.ReadString()),
+            13 => new SetChannelCmd(r.ReadInt32(), r.ReadInt32()), 14 => new ChatCmd(Trunc(r.ReadString(), 200)),
             _ => throw new InvalidDataException("Unknown command tag " + tag),
         };
         c.PlayerId = pid;
@@ -154,7 +155,7 @@ public sealed class SetChannelCmd(int building, int channel) : ICommand
 {
     public int PlayerId { get; set; }
     public byte Tag => 13;
-    public Result Execute(Simulation s, Player p) => s.SetChannel(building, channel);
+    public Result Execute(Simulation s, Player p) => s.SetChannel(p, building, channel);
     public void Write(BinaryWriter w) { w.Write(building); w.Write(channel); }
 }
 
@@ -177,6 +178,11 @@ public sealed partial class Simulation
     public Result Execute(ICommand c)
     {
         if (!Players.TryGetValue(c.PlayerId, out var p)) return Result.Fail("Unknown player");
-        return c.Execute(this, p);
+        try { return c.Execute(this, p); }
+        catch (Exception e) when (e is KeyNotFoundException or ArgumentException or InvalidOperationException or IndexOutOfRangeException or NullReferenceException)
+        {
+            // A malformed command must never take the host down; it fails identically on every peer.
+            return Result.Fail("Invalid command");
+        }
     }
 }

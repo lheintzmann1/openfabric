@@ -217,6 +217,8 @@ public sealed partial class Simulation
         }
         if (b.Kind == "underground" && b.Link != 0 && ById.TryGetValue(b.Link, out var other))
         {
+            if (refundTo != null) foreach (var t in other.Transit) refundTo.Inv.Add(t.Item, 1);
+            other.Transit.Clear();
             other.Link = 0; other.IsExit = false;
         }
         foreach (var (tx, ty) in b.Tiles()) occ.Remove(Key(tx, ty));
@@ -296,7 +298,7 @@ public sealed partial class Simulation
                 if (dirTo == Dir.Opp(t.Rot) || t.BeltCount > 0) return false;
                 t.Belt[0] = new BeltItem { Item = item, Pos = 0 }; t.BeltCount = 1; return true;
             case "underground":
-                if (t.IsExit || t.Link == 0 || dirTo == Dir.Opp(t.Rot) || t.AcceptCooldown > 0) return false;
+                if (t.IsExit || t.Link == 0 || dirTo == Dir.Opp(t.Rot) || t.AcceptCooldown > 0 || t.Transit.Count >= 48) return false;
                 t.Transit.Add(new TransitItem { Item = item, T = 0 });
                 t.AcceptCooldown = BeltSpacing / Math.Max(0.1, t.Def.Prop("speed", 1.875));
                 return true;
@@ -410,9 +412,19 @@ public sealed partial class Simulation
                     break;
             }
         }
+        foreach (var pl in Players.Values) pl.MoveBudget = Math.Min(6, pl.MoveBudget + 0.7);
         UpdateHandCrafting();
     }
 
     public const double DayLength = 600;
-    public double Daylight => Math.Clamp(0.5 + 0.9 * Math.Sin(DayTime / DayLength * Math.PI * 2), 0, 1);
+    public double Daylight
+    {
+        get
+        {
+            // pure-arithmetic triangle wave (no libm) so every platform computes identical values
+            double ph = DayTime / DayLength;
+            double tri = ph < 0.25 ? 4 * ph : ph < 0.75 ? 2 - 4 * ph : 4 * ph - 4;
+            return Math.Clamp(0.5 + 0.9 * tri, 0, 1);
+        }
+    }
 }

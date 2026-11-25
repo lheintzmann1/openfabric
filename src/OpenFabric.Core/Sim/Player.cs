@@ -14,6 +14,9 @@ public sealed class Player
     public readonly Inventory Inv = new();
     public readonly List<CraftJob> Queue = new();
     public double MineProgress;
+    public long LastMineTick = -1;
+    /// <summary>Movement allowance (tiles); refilled each tick so clients cannot teleport or speed-hack.</summary>
+    public double MoveBudget = 6;
     public (int x, int y)? MiningTile;
     /// <summary>False while a remote player is disconnected (their character and inventory are kept for rejoining).</summary>
     public bool Online = true;

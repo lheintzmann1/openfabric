@@ -187,7 +187,7 @@ public class SimTests
         var (x, y) = TestData.FindOre(sim, "iron_ore", 1, 1);
         var p = sim.GetPlayer(1)!; p.X = x + 0.5f; p.Y = y + 0.5f;
         var (_, amt0) = sim.Map.ResourceAt(x, y);
-        for (int i = 0; i < 4 * Simulation.TickRate; i++) Ok(sim.Execute(new MineCmd(x, y) { PlayerId = 1 }));
+        for (int i = 0; i < 4 * Simulation.TickRate; i++) { Ok(sim.Execute(new MineCmd(x, y) { PlayerId = 1 })); sim.Step(); }
         Assert.True(p.Inv.Get("iron_ore") >= 2);
         Assert.True(sim.Map.ResourceAt(x, y).amount < amt0);
     }

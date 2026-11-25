@@ -91,7 +91,7 @@ public sealed partial class Simulation
             foreach (var b in n.Members)
             {
                 if (b.Kind == "pole" || b.Kind == "battery" || b.Kind.StartsWith("generator_")) continue;
-                if (b.Active && b.Def.PowerKw > 0) demand += b.Def.PowerKw * Math.Pow(b.Clock, 1.6) / (1 + Team.Mod("powerEff"));
+                if (b.Active && b.Def.PowerKw > 0) demand += b.Def.PowerKw * (b.Clock * b.Clock) / (1 + Team.Mod("powerEff"));
             }
             foreach (var g in n.Generators) cap += GeneratorAvailKw(g);
             foreach (var bt in n.Batteries) battCap += Math.Min(bt.Def.Prop("rateKw", 100), bt.Charge * 1000 / Dt);
@@ -161,16 +161,22 @@ public sealed partial class Simulation
             var stack = new Stack<Building>();
             stack.Push(b); b.FNet = net;
             double minFlow = double.MaxValue;
+            var byType = new Dictionary<string, double>();
             while (stack.Count > 0)
             {
                 var c = stack.Pop();
                 net.Members.Add(c);
                 net.Capacity += FluidCap(c);
                 if (c.Kind == "pipe") minFlow = Math.Min(minFlow, c.Def.Prop("flow", 50));
-                net.Amount += c.FluidAmount;
-                if (net.Type == null && c.FluidType != null && c.FluidAmount > 1e-9) net.Type = c.FluidType;
+                if (c.FluidType != null && c.FluidAmount > 1e-9) byType[c.FluidType] = byType.GetValueOrDefault(c.FluidType) + c.FluidAmount;
                 foreach (var (n, _) in NeighborsOf(c))
                     if (n.Kind is "pipe" or "tank" && n.FNet == null) { n.FNet = net; stack.Push(n); }
+            }
+            if (byType.Count > 0)
+            {
+                // mixed fluids cannot coexist: keep the dominant one, the rest is lost
+                var best = byType.OrderByDescending(kv => kv.Value).ThenBy(kv => kv.Key, StringComparer.Ordinal).First();
+                net.Type = best.Key; net.Amount = best.Value;
             }
             net.Flow = minFlow == double.MaxValue ? 1000 : minFlow;
             if (net.Amount > net.Capacity) net.Amount = net.Capacity;

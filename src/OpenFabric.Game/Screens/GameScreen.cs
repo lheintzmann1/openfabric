@@ -118,7 +118,6 @@ public sealed class GameScreen : Screen
         Session.PlayTime += dt;
         buildings.Time = Session.PlayTime;
         toastCooldown -= dt;
-        showDebug |= false;
 
         Session.Poll();
         if (Session is ClientSession { Connected: false } cs0 && cs0.Error != null && !disconnectedShown)
@@ -320,14 +319,12 @@ public sealed class GameScreen : Screen
                         int dx = ax - last.x, dy = ay - last.y;
                         (int sx, int sy) = Math.Abs(dx) >= Math.Abs(dy) ? (Math.Sign(dx), 0) : (0, Math.Sign(dy));
                         int rot = sx == 1 ? 0 : sx == -1 ? 2 : sy == 1 ? 1 : 3;
-                        bool dirty = def.Kind is "belt" or "pipe" or "underground" or "loader";
                         if (def.Kind is "belt" or "underground" or "loader" or "splitter" or "merger")
                         {
                             ctx.HeldRot = rot;
                             // turn the previous tile towards the new one
                             if (Sim.At(last.x, last.y) is { } prev && prev.Def.Id == def.Id && prev.Rot != rot) TryPlace(def, last.x, last.y, rot, quiet: true);
                         }
-                        _ = dirty;
                         last = (last.x + sx, last.y + sy);
                         TryPlace(def, last.x, last.y, ctx.HeldRot, quiet: true);
                     }
@@ -725,9 +722,7 @@ public sealed class GameScreen : Screen
     {
         var g = G;
         double now = Session.PlayTime;
-        int y = Ui.Screen.Y - 190;
         var recent = Session.Log.Where(l => now - l.time < 8).TakeLast(6).ToList();
-        if (Me.Queue.Count > 0) y -= 0;
         int x = 10;
         int baseY = Ui.Screen.Y - 190 - (Me.Queue.Count > 0 ? 0 : -60);
         for (int i = recent.Count - 1; i >= 0; i--)
@@ -737,7 +732,6 @@ public sealed class GameScreen : Screen
             g.Rect(new Rectangle(x, baseY - (recent.Count - 1 - i) * 24 - 2, (int)sz.X + 14, 22), new Color(0, 0, 0, (int)(150 * a)));
             g.Text(recent[i].text, new Vector2(x + 7, baseY - (recent.Count - 1 - i) * 24), 14, Theme.Text * a);
         }
-        _ = y;
     }
 
     void DrawMinimap(Rectangle r)

@@ -5,7 +5,8 @@ namespace OpenFabric.Core.Sim;
 /// <summary>Bag of items. MaxSlots = 0 means unlimited. Fluids never occupy slots.</summary>
 public sealed class Inventory
 {
-    public readonly Dictionary<string, double> Items = new();
+    /// <summary>Ordinal-sorted so "first item" logic is identical on host and clients regardless of history.</summary>
+    public readonly SortedDictionary<string, double> Items = new(StringComparer.Ordinal);
     public int MaxSlots;
 
     public double Get(string id) => Items.TryGetValue(id, out var v) ? v : 0;
