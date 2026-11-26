@@ -95,11 +95,11 @@ public sealed class GameScreen : Screen
     public GameScreen(OpenFabricGame host, GameSession session) : base(host)
     {
         Session = session;
-        chunks = new ChunkRenderer(host.GraphicsDevice, session.Sim.Map, host.Gfx.Svg);
+        chunks = new ChunkRenderer(host.GraphicsDevice, session.Sim.Map, host.Gfx.Assets);
         buildings = new BuildingRenderer(host.Gfx, cam);
         ctx = new UiContext { Ui = host.Ui, S = session, Cam = cam, Windows = windows };
         foreach (var w in WindowRegistry.CreateAll()) windows.Add(w);
-        session.SimChanged += () => { chunks = new ChunkRenderer(Host.GraphicsDevice, Session.Sim.Map, Host.Gfx.Svg); };
+        session.SimChanged += () => { chunks = new ChunkRenderer(Host.GraphicsDevice, Session.Sim.Map, Host.Gfx.Assets); };
         cam.Center = new Vector2(session.PredX, session.PredY);
         for (int cy = -2; cy <= 1; cy++) for (int cx = -2; cx <= 1; cx++) session.Sim.Map.GetChunk(cx, cy);
     }
@@ -476,13 +476,13 @@ public sealed class GameScreen : Screen
     static readonly string[] TerrainNames = { "deep_water", "water", "sand", "grass", "forest", "rock", "cliff", "snow" };
     readonly Texture2D?[] terrainTex = new Texture2D?[TerrainNames.Length];
 
-    /// <summary>Close-up: draw the per-terrain SVG tiles (with rotation/shade variation) and resource art over the baked map.</summary>
+    /// <summary>Close-up: draw the per-terrain PNG tiles (with rotation/shade variation) and resource art over the baked map.</summary>
     void DrawTileArt()
     {
         if (cam.Zoom < 14) return;
         var (x0, y0, x1, y1) = cam.VisibleTiles();
         float z = cam.Zoom; var g = G; var map = Sim.Map;
-        for (int i = 0; i < terrainTex.Length; i++) terrainTex[i] = g.Svg.Get("terrain/" + TerrainNames[i], z);
+        for (int i = 0; i < terrainTex.Length; i++) terrainTex[i] = g.Assets.Get("terrain/" + TerrainNames[i]);
         for (int ty = y0; ty < y1; ty++)
             for (int tx = x0; tx < x1; tx++)
             {

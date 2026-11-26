@@ -34,7 +34,7 @@ public sealed class BuildingRenderer
 
     static bool Directional(string kind) => kind is "belt" or "splitter" or "dual_splitter" or "merger" or "underground" or "loader";
 
-    /// <summary>Draw the building's SVG sprite centred on the footprint (rotated for directional kinds, quarter-turn for others).</summary>
+    /// <summary>Draw the building's PNG sprite centred on the footprint (rotated for directional kinds, quarter-turn for others).</summary>
     bool Sprite(BuildingDef def, Vector2 centre, int rot, Color tint)
     {
         float z = cam.Zoom;

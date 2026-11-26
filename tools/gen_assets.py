@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 """
-Generates the default SVG art for OpenFabric into src/OpenFabric.Game/Assets/{items,buildings,resources,terrain,research,ui}.
+Generates the default PNG art for OpenFabric into src/OpenFabric.Game/Assets/{items,buildings,resources,terrain,research,ui}.
 
-One file per thing, named after its id. Replace any file with your own SVG and it is used instead (the game falls back
+One file per thing, named after its id. Replace any file with your own PNG and it is used instead (the game falls back
 to nothing for a missing file, so keep the names). Re-running this script OVERWRITES files, so only run it for files you
 have not customised (use --only <category> and/or --keep-existing).
 
-Requires: pip install fonttools   (to extract the Material Icons glyph outlines)
+Requires: pip install fonttools   (to extract the Material Icons glyph outlines) and rsvg-convert (librsvg)
 Usage:    python3 tools/gen_assets.py [--keep-existing] [--only items,buildings,...]
 """
-import argparse, json, os, re, random, zlib, glob
+import argparse, json, os, re, random, shutil, subprocess, zlib, glob
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ASSETS = os.path.join(ROOT, "src/OpenFabric.Game/Assets")
@@ -70,10 +70,10 @@ def rng(key):
 def write(cat, name, svg, keep):
     d = os.path.join(ASSETS, cat)
     os.makedirs(d, exist_ok=True)
-    p = os.path.join(d, name + ".svg")
+    p = os.path.join(d, name + ".png")
     if keep and os.path.exists(p):
         return 0
-    open(p, "w").write(svg)
+    subprocess.run(["rsvg-convert", "-f", "png", "-o", p], input=svg.encode(), check=True)
     return 1
 
 
@@ -244,6 +244,8 @@ def ui_names():
 
 
 def main():
+    if not shutil.which("rsvg-convert"):
+        raise SystemExit("rsvg-convert not found (install librsvg)")
     ap = argparse.ArgumentParser()
     ap.add_argument("--keep-existing", action="store_true")
     ap.add_argument("--only", default="items,buildings,resources,terrain,research,ui")

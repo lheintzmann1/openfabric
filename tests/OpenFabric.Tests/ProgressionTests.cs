@@ -223,6 +223,22 @@ public class ProgressionTests
     }
 
     [Fact]
+    public void PngAssetsExistAndNoSvgsRemain()
+    {
+        var d = Load();
+        var assets = Path.Combine(RepoRoot(), "src/OpenFabric.Game/Assets");
+        Assert.Empty(Directory.GetFiles(assets, "*.svg", SearchOption.AllDirectories));
+        var missing = new List<string>();
+        void MustExist(string rel) { if (!File.Exists(Path.Combine(assets, rel + ".png"))) missing.Add(rel + ".png"); }
+        foreach (var i in d.Items.Values) MustExist("items/" + i.Id);
+        foreach (var b in d.Buildings.Values) MustExist("buildings/" + b.Id);
+        foreach (var r in d.Research.Values) MustExist("research/" + r.Id);
+        foreach (var r in d.Resources) MustExist("resources/" + r.Item);
+        foreach (var t in new[] { "deep_water", "water", "sand", "grass", "forest", "rock", "cliff", "snow" }) MustExist("terrain/" + t);
+        Assert.True(missing.Count == 0, "missing PNG assets: " + string.Join(", ", missing));
+    }
+
+    [Fact]
     public void KindsAndMachinesAreImplementable()
     {
         var d = Load();

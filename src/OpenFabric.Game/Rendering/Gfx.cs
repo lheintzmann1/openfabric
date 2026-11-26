@@ -9,7 +9,7 @@ public sealed class Gfx
 {
     public readonly SpriteBatch Sb;
     public readonly Texture2D Pixel;
-    public readonly SvgAssets Svg;
+    public readonly PngAssets Assets;
     readonly FontSystem text = new();
     readonly FontSystem icons = new();
     readonly Dictionary<string, string> codepoints = new();
@@ -17,7 +17,7 @@ public sealed class Gfx
     public Gfx(GraphicsDevice gd, string assetDir)
     {
         Sb = new SpriteBatch(gd);
-        Svg = new SvgAssets(gd, assetDir);
+        Assets = new PngAssets(gd, assetDir);
         Pixel = new Texture2D(gd, 1, 1);
         Pixel.SetData(new[] { Color.White });
         text.AddFont(File.ReadAllBytes(Path.Combine(assetDir, "fonts", "Inter.ttf")));
@@ -59,7 +59,7 @@ public sealed class Gfx
     /// <summary>Draws a Material icon centred on <paramref name="center"/>.</summary>
     public void Icon(string name, Vector2 center, float px, Color c, bool shadow = false)
     {
-        if (TrySvgIcon(name, center, px, c, 0f, shadow)) return;
+        if (TryPngIcon(name, center, px, c, 0f, shadow)) return;
         if (name.Contains('/')) name = "help_outline";
         if (!codepoints.TryGetValue(name, out var g)) g = codepoints["help_outline"];
         var f = icons.GetFont(Math.Max(8, (int)MathF.Round(px)));
@@ -72,7 +72,7 @@ public sealed class Gfx
     /// <summary>Icon rotated clockwise by <paramref name="rot"/> radians around its centre.</summary>
     public void IconRot(string name, Vector2 center, float px, Color c, float rot)
     {
-        if (TrySvgIcon(name, center, px, c, rot, false)) return;
+        if (TryPngIcon(name, center, px, c, rot, false)) return;
         if (name.Contains('/')) name = "help_outline";
         if (!codepoints.TryGetValue(name, out var g)) g = codepoints["help_outline"];
         var f = icons.GetFont(Math.Max(8, (int)MathF.Round(px)));
@@ -81,13 +81,13 @@ public sealed class Gfx
     }
 
     /// <summary>
-    /// SVG icon lookup. "items/x", "buildings/x", ... are full-colour art (the tint's alpha is used, its colour ignored);
-    /// plain names like "close" resolve to ui/close.svg and are tinted like the font glyphs.
+    /// PNG icon lookup. "items/x", "buildings/x", ... are full-colour art (the tint's alpha is used, its colour ignored);
+    /// plain names like "close" resolve to ui/close.png and are tinted like the font glyphs.
     /// </summary>
-    bool TrySvgIcon(string name, Vector2 center, float px, Color c, float rot, bool shadow)
+    bool TryPngIcon(string name, Vector2 center, float px, Color c, float rot, bool shadow)
     {
         bool full = name.Contains('/');
-        var tex = Svg.Get(full ? name : "ui/" + name, px);
+        var tex = Assets.Get(full ? name : "ui/" + name);
         if (tex == null) return false;
         var tint = full ? Color.White * (c.A / 255f) : c;
         DrawTex(tex, center, px, tint, rot, shadow);
@@ -103,10 +103,10 @@ public sealed class Gfx
         Sb.Draw(tex, center, null, tint, rot, origin, k, SpriteEffects.None, 0);
     }
 
-    /// <summary>Draw an SVG asset stretched to a destination size (centre-based), optionally rotated.</summary>
+    /// <summary>Draw a PNG asset stretched to a destination size (centre-based), optionally rotated.</summary>
     public bool Sprite(string path, Vector2 center, float w, float h, Color tint, float rot = 0f, SpriteEffects fx = SpriteEffects.None)
     {
-        var tex = Svg.Get(path, Math.Max(w, h));
+        var tex = Assets.Get(path);
         if (tex == null) return false;
         Sb.Draw(tex, center, null, tint, rot, new Vector2(tex.Width, tex.Height) * 0.5f, new Vector2(w / tex.Width, h / tex.Height), fx, 0);
         return true;

@@ -29,16 +29,16 @@ public sealed class ChunkRenderer
 
     static readonly string[] Names = { "deep_water", "water", "sand", "grass", "forest", "rock", "cliff", "snow" };
     Color[] palette = (Color[])Palette.Clone();
-    public SvgAssets? Svg;
+    public PngAssets? Assets;
 
-    public ChunkRenderer(GraphicsDevice gd, WorldMap map, SvgAssets? svg = null) { this.gd = gd; this.map = map; Svg = svg; RefreshPalette(); }
+    public ChunkRenderer(GraphicsDevice gd, WorldMap map, PngAssets? assets = null) { this.gd = gd; this.map = map; Assets = assets; RefreshPalette(); }
 
-    /// <summary>Zoomed-out terrain colours come from the average colour of each terrain SVG (falls back to the built-in palette).</summary>
+    /// <summary>Zoomed-out terrain colours come from the average colour of each terrain PNG (falls back to the built-in palette).</summary>
     public void RefreshPalette()
     {
         palette = (Color[])Palette.Clone();
-        if (Svg == null) return;
-        for (int i = 0; i < Names.Length; i++) if (Svg.Average("terrain/" + Names[i]) is { } c) palette[i] = c;
+        if (Assets == null) return;
+        for (int i = 0; i < Names.Length; i++) if (Assets.Average("terrain/" + Names[i]) is { } c) palette[i] = c;
     }
 
     static long Key(int cx, int cy) => ((long)cx << 32) ^ (uint)cy;
